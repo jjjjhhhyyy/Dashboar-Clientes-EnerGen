@@ -15,9 +15,11 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { Search, MapPin, Phone, ArrowRight, FileDown, Upload, Loader2 } from "lucide-react";
+import { Search, MapPin, Phone, ArrowRight, FileDown, Upload, Loader2, FileType } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import * as mammoth from "mammoth";
+import * as XLSX from "xlsx";
 
 const Clients = () => {
   const [clients, setClients] = useState<Client[]>([]);
@@ -28,7 +30,6 @@ const Clients = () => {
   const navigate = useNavigate();
 
   const fetchClients = async () => {
-    // Solo mostramos loading global si la lista está vacía
     if (clients.length === 0) setLoading(true);
     
     const { data, error } = await supabase
@@ -47,8 +48,10 @@ const Clients = () => {
   }, []);
 
   const handleExportCSV = () => {
-    if (clients.length === 0) return;
-    
+    if (clients.length === 0) {
+      toast.error("No hay clientes para exportar");
+      return;
+    }
     const headers = ["ID", "Nombre", "Provincia", "Ciudad", "Dirección", "Teléfono", "Estado"];
     const csvContent = [
       headers.join(","),
@@ -67,80 +70,147 @@ const Clients = () => {
     document.body.removeChild(link);
   };
 
-  const parseCSVLine = (text: string) => {
-    const result = [];
-    let cell = '';
-    let quote = false;
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i];
-      if (char === '"') {
-        quote = !quote;
-      } else if (char === ',' && !quote) {
-        result.push(cell);
-        cell = '';
-      } else {
-        cell += char;
+  // --- Lógica de Importación Universal (Word, Excel, CSV) ---
+
+  const processImportedData = async (rows: string[][]) => {
+    let importedCount = 0;
+    let errors = 0;
+
+    for (const cols of rows) {
+      // Validar fila mínima
+      if (cols.length < 1 || !cols[0]) continue;
+
+      let name = cols[0].trim();
+      // Ignorar encabezados comunes
+      if (["nombre", "cliente", "razón social", "name"].includes(name.toLowerCase())) continue;
+      
+      let province = "Misiones"; // Default inteligente
+      let city = "Desconocida";
+      let address = "-";
+      let phone = "-";
+
+      // Intentar mapear columnas según cantidad
+      if (cols.length >= 3) {
+        // Asumimos: Nombre, Provincia, Ciudad
+        province = cols[1]?.trim() || province;
+        city = cols[2]?.trim() || city;
+        if (cols[3]) address = cols[3].trim();
+        if (cols[4]) phone = cols[4].trim();
+      } else if (cols.length === 2) {
+        // Asumimos: Nombre, Ciudad (Provincia default)
+        city = cols[1]?.trim() || city;
+      }
+
+      // Limpieza final
+      name = name.replace(/^"|"$/g, '').replace(/\./g, '');
+      
+      if (name.length > 2) {
+        const { error } = await supabase.from("clients").insert({
+          name,
+          province,
+          city,
+          address,
+          phone,
+          status: "Activo"
+        });
+        
+        if (!error) importedCount++;
+        else errors++;
       }
     }
-    result.push(cell);
-    return result.map(c => c.replace(/^"|"$/g, '').replace(/""/g, '"').trim());
+
+    if (importedCount > 0) {
+      toast.success(`${importedCount} clientes importados.`);
+      fetchClients();
+    } else {
+      toast.warning("No se encontraron clientes válidos en el archivo.");
+    }
   };
 
-  const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setImporting(true);
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const text = event.target?.result as string;
-        const rows = text.split(/\r?\n/).slice(1);
-        let importedCount = 0;
+    const fileName = file.name.toLowerCase();
 
-        for (const row of rows) {
-          if (!row.trim()) continue;
-          const cols = parseCSVLine(row);
-          // CSV Format expectation: ID, Name, Province, City... OR Name, Province, City
-          let name, province, city;
-          
-          if (cols.length >= 3) {
-             // Try to detect column mapping loosely
-             if (cols[1] && cols[1].length > 2) { // Probably name in col 1 (if col 0 is ID)
-                name = cols[1];
-                province = cols[2];
-                city = cols[3];
-             } else {
-                name = cols[0];
-                province = cols[1];
-                city = cols[2];
-             }
-          } else {
-             name = cols[0]; // Just name
-          }
-
-          if (name) {
-             await supabase.from("clients").insert({
-                name,
-                province: province || "Desconocida",
-                city: city || "Desconocida",
-                address: "-",
-                phone: "-",
-                status: "Activo"
-             });
-             importedCount++;
-          }
-        }
-        toast.success(`${importedCount} clientes importados.`);
-        fetchClients();
-      } catch (err) {
-        toast.error("Error al importar CSV");
-      } finally {
-        setImporting(false);
+    try {
+      // 1. Manejo de CSV
+      if (fileName.endsWith('.csv')) {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          const text = event.target?.result as string;
+          const rows = text.split(/\r?\n/).map(row => row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)); // Split by comma respecting quotes
+          await processImportedData(rows);
+        };
+        reader.readAsText(file);
       }
-    };
-    reader.readAsText(file);
-    e.target.value = "";
+      // 2. Manejo de Excel (.xlsx, .xls)
+      else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          const data = new Uint8Array(event.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          // Convertir a array de arrays
+          const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 }) as string[][];
+          await processImportedData(jsonData);
+        };
+        reader.readAsArrayBuffer(file);
+      }
+      // 3. Manejo de Word (.docx)
+      else if (fileName.endsWith('.docx')) {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          const arrayBuffer = event.target?.result as ArrayBuffer;
+          // Convertir Docx a HTML para poder leer las tablas
+          const result = await mammoth.convertToHtml({ arrayBuffer });
+          const html = result.value;
+          
+          // Parsear el HTML generado
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, 'text/html');
+          const tables = doc.querySelectorAll('table');
+          
+          let allRows: string[][] = [];
+
+          if (tables.length > 0) {
+            // Si hay tablas, las leemos
+            tables.forEach(table => {
+              const rows = table.querySelectorAll('tr');
+              rows.forEach(tr => {
+                const cells = Array.from(tr.querySelectorAll('td, th')).map(td => td.textContent || "");
+                if (cells.length > 0) allRows.push(cells);
+              });
+            });
+          } else {
+            // Si no hay tablas, intentamos leer por párrafos (quizás es una lista simple)
+            const paragraphs = doc.querySelectorAll('p');
+            paragraphs.forEach(p => {
+              const text = p.textContent || "";
+              if (text.includes('\t') || text.includes(',')) {
+                 // Intentar dividir por tab o coma
+                 allRows.push(text.split(/[\t,]/));
+              } else if (text.trim().length > 3) {
+                 // Asumir que es solo el nombre
+                 allRows.push([text]);
+              }
+            });
+          }
+          
+          await processImportedData(allRows);
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        toast.error("Formato no soportado. Usa .docx, .xlsx o .csv");
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Error al leer el archivo: " + err.message);
+    } finally {
+      setImporting(false);
+      e.target.value = ""; // Reset
+    }
   };
 
   const filteredClients = clients.filter(client => 
@@ -166,20 +236,19 @@ const Clients = () => {
           <p className="text-gray-500 dark:text-gray-400">Gestión de cartera y equipos instalados.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          {/* Hidden CSV Input */}
           <input 
             type="file" 
             ref={fileInputRef} 
             className="hidden" 
-            accept=".csv" 
-            onChange={handleImportCSV} 
+            accept=".csv, .xlsx, .xls, .docx" 
+            onChange={handleFileUpload} 
           />
           
           <BulkImportDialog onImportComplete={fetchClients} />
           
-          <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing}>
-            {importing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-            CSV
+          <Button variant="default" className="bg-green-600 hover:bg-green-700" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+            {importing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileType className="mr-2 h-4 w-4" />}
+            {importing ? "Leyendo..." : "Importar Archivo (Word/Excel)"}
           </Button>
           <Button variant="outline" onClick={handleExportCSV}>
             <FileDown className="mr-2 h-4 w-4" /> Exportar
@@ -218,7 +287,7 @@ const Clients = () => {
                     <TableCell colSpan={5} className="text-center py-10 dark:text-gray-400">
                       <div className="flex justify-center items-center gap-2">
                         <Loader2 className="h-6 w-6 animate-spin text-energen-blue" />
-                        <span>Cargando clientes...</span>
+                        <span>Cargando cartera de clientes...</span>
                       </div>
                     </TableCell>
                   </TableRow>
