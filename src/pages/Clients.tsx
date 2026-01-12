@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Client } from "../types";
 import { ClientDialog } from "@/components/clients/ClientDialog";
+import { BulkImportDialog } from "@/components/clients/BulkImportDialog";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,8 +28,7 @@ const Clients = () => {
   const navigate = useNavigate();
 
   const fetchClients = async () => {
-    // No ponemos setLoading(true) aquí para evitar parpadeos si ya hay datos, 
-    // solo en la carga inicial.
+    // Solo mostramos loading global si la lista está vacía
     if (clients.length === 0) setLoading(true);
     
     const { data, error } = await supabase
@@ -47,16 +47,12 @@ const Clients = () => {
   }, []);
 
   const handleExportCSV = () => {
-    if (clients.length === 0) {
-      toast.error("No hay clientes para exportar");
-      return;
-    }
+    if (clients.length === 0) return;
     
     const headers = ["ID", "Nombre", "Provincia", "Ciudad", "Dirección", "Teléfono", "Estado"];
     const csvContent = [
       headers.join(","),
       ...clients.map(c => 
-        // Envolvemos en comillas para proteger comas internas
         `"${c.id}","${c.name}","${c.province}","${c.city}","${c.address}","${c.phone}","${c.status}"`
       )
     ].join("\n");
@@ -71,7 +67,6 @@ const Clients = () => {
     document.body.removeChild(link);
   };
 
-  // Función inteligente para leer CSV respetando comillas
   const parseCSVLine = (text: string) => {
     const result = [];
     let cell = '';
@@ -97,85 +92,55 @@ const Clients = () => {
 
     setImporting(true);
     const reader = new FileReader();
-    
     reader.onload = async (event) => {
       try {
         const text = event.target?.result as string;
-        const rows = text.split(/\r?\n/); // Maneja saltos de línea de Windows/Mac/Linux
-        
+        const rows = text.split(/\r?\n/).slice(1);
         let importedCount = 0;
-        let errors = 0;
 
-        // Saltamos la cabecera (índice 0)
-        for (let i = 1; i < rows.length; i++) {
-          const row = rows[i];
+        for (const row of rows) {
           if (!row.trim()) continue;
-          
           const cols = parseCSVLine(row);
+          // CSV Format expectation: ID, Name, Province, City... OR Name, Province, City
+          let name, province, city;
           
-          // Esperamos: ID(ignorar), Nombre, Provincia, Ciudad, Dirección, Teléfono, Estado
-          // O formato simple: Nombre, Provincia, Ciudad...
-          
-          // Intentamos detectar el formato. Si tiene ID (uuid largo), probablemente es exportado del sistema.
-          // Si no, es un excel manual. Asumiremos el orden estándar de exportación para re-importar.
-          // Indice CSV Exportado: 0:ID, 1:Nombre, 2:Provincia, 3:Ciudad, 4:Dirección, 5:Teléfono, 6:Estado
-          
-          let name, province, city, address, phone;
-
-          if (cols.length >= 6) {
-             // Formato Completo
-             name = cols[1];
-             province = cols[2];
-             city = cols[3];
-             address = cols[4];
-             phone = cols[5];
-          } else if (cols.length >= 3) {
-             // Formato Simple (Nombre, Provincia, Ciudad...)
-             name = cols[0];
-             province = cols[1];
-             city = cols[2];
-             address = cols[3] || "-";
-             phone = cols[4] || "-";
+          if (cols.length >= 3) {
+             // Try to detect column mapping loosely
+             if (cols[1] && cols[1].length > 2) { // Probably name in col 1 (if col 0 is ID)
+                name = cols[1];
+                province = cols[2];
+                city = cols[3];
+             } else {
+                name = cols[0];
+                province = cols[1];
+                city = cols[2];
+             }
+          } else {
+             name = cols[0]; // Just name
           }
 
           if (name) {
-             const { error } = await supabase.from("clients").insert({
+             await supabase.from("clients").insert({
                 name,
                 province: province || "Desconocida",
                 city: city || "Desconocida",
-                address: address || "-",
-                phone: phone || "-",
+                address: "-",
+                phone: "-",
                 status: "Activo"
              });
-             
-             if (!error) importedCount++;
-             else {
-               console.error("Error importando fila:", row, error);
-               errors++;
-             }
+             importedCount++;
           }
         }
-        
-        if (importedCount > 0) {
-          toast.success(`${importedCount} clientes importados correctamente.`);
-          fetchClients();
-        } else {
-          toast.warning("No se pudieron importar clientes. Verifica el formato del archivo.");
-        }
-        
-        if (errors > 0) {
-          toast.error(`Hubo errores en ${errors} filas.`);
-        }
-
+        toast.success(`${importedCount} clientes importados.`);
+        fetchClients();
       } catch (err) {
-        toast.error("Error al procesar el archivo.");
-        console.error(err);
+        toast.error("Error al importar CSV");
       } finally {
         setImporting(false);
       }
     };
     reader.readAsText(file);
-    e.target.value = ""; // Reset input
+    e.target.value = "";
   };
 
   const filteredClients = clients.filter(client => 
@@ -195,12 +160,13 @@ const Clients = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-energen-slate dark:text-white">Clientes</h2>
           <p className="text-gray-500 dark:text-gray-400">Gestión de cartera y equipos instalados.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          {/* Hidden CSV Input */}
           <input 
             type="file" 
             ref={fileInputRef} 
@@ -208,9 +174,12 @@ const Clients = () => {
             accept=".csv" 
             onChange={handleImportCSV} 
           />
+          
+          <BulkImportDialog onImportComplete={fetchClients} />
+          
           <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing}>
             {importing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-            {importing ? "Importando..." : "Importar CSV"}
+            CSV
           </Button>
           <Button variant="outline" onClick={handleExportCSV}>
             <FileDown className="mr-2 h-4 w-4" /> Exportar
@@ -249,7 +218,7 @@ const Clients = () => {
                     <TableCell colSpan={5} className="text-center py-10 dark:text-gray-400">
                       <div className="flex justify-center items-center gap-2">
                         <Loader2 className="h-6 w-6 animate-spin text-energen-blue" />
-                        <span>Cargando cartera de clientes...</span>
+                        <span>Cargando clientes...</span>
                       </div>
                     </TableCell>
                   </TableRow>
