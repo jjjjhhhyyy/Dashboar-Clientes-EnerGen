@@ -68,7 +68,7 @@ const ClientDetails = () => {
     const { data: servData } = await supabase.from("services").select("*").eq("client_id", id).order("date", { ascending: false });
     if (servData) setServices(servData as Service[]);
 
-    // 4. Documents & Generate URLs for Images
+    // 4. Documents
     const { data: docData, error: docError } = await supabase
       .from("documents")
       .select("*")
@@ -80,12 +80,12 @@ const ClientDetails = () => {
     }
 
     if (docData) {
-      // Generamos URLs firmadas (válidas por 1 hora) para que se puedan ver archivos privados
-      const docsWithUrls = await Promise.all(docData.map(async (doc) => {
-        const { data } = await supabase.storage.from("documents").createSignedUrl(doc.file_path, 3600);
-        return { ...doc, publicUrl: data?.signedUrl };
-      }));
-      setDocuments(docsWithUrls as (Document & { publicUrl?: string })[]);
+      // Usamos URLs públicas para mayor fiabilidad con PDFs y visualización
+      const docsWithUrls = docData.map((doc) => {
+        const { data } = supabase.storage.from("documents").getPublicUrl(doc.file_path);
+        return { ...doc, publicUrl: data.publicUrl };
+      });
+      setDocuments(docsWithUrls);
     } else {
       setDocuments([]);
     }
@@ -97,14 +97,13 @@ const ClientDetails = () => {
     fetchAll();
   }, [fetchAll]);
 
-  // --- Helper para abrir archivos con URL firmada al vuelo (para la tabla de servicios) ---
-  const openSignedUrl = async (filePath: string) => {
-    try {
-      const { data, error } = await supabase.storage.from("documents").createSignedUrl(filePath, 3600);
-      if (error) throw error;
-      if (data?.signedUrl) window.open(data.signedUrl, '_blank');
-    } catch (err: any) {
-      toast.error("No se pudo abrir el archivo: " + err.message);
+  // --- Helper para abrir archivos ---
+  const openFile = (filePath: string) => {
+    const { data } = supabase.storage.from("documents").getPublicUrl(filePath);
+    if (data?.publicUrl) {
+      window.open(data.publicUrl, '_blank');
+    } else {
+      toast.error("No se pudo obtener el enlace del archivo");
     }
   };
 
@@ -162,10 +161,6 @@ const ClientDetails = () => {
     } catch (error: any) {
       toast.error("Error al renombrar: " + error.message);
     }
-  };
-
-  const openFile = (url: string) => {
-    window.open(url, '_blank');
   };
 
   const getServiceStatus = (dateString?: string) => {
@@ -363,7 +358,7 @@ const ClientDetails = () => {
                         <TableCell className="dark:text-gray-300 max-w-md truncate" title={svc.description}>
                           {svc.description}
                           {(svc as any).file_path && (
-                             <Button variant="link" className="h-auto p-0 ml-2 text-blue-600" onClick={() => openSignedUrl((svc as any).file_path)}>
+                             <Button variant="link" className="h-auto p-0 ml-2 text-blue-600" onClick={() => openFile((svc as any).file_path)}>
                                [Ver PDF]
                              </Button>
                           )}
@@ -427,7 +422,7 @@ const ClientDetails = () => {
                    </Button>
                  </div>
                  
-                 <div onClick={() => doc.publicUrl && openFile(doc.publicUrl)} className="cursor-pointer">
+                 <div onClick={() => openFile(doc.file_path)} className="cursor-pointer">
                    {/* VISTA PREVIA SI ES IMAGEN */}
                    {doc.file_type === 'image' && doc.publicUrl ? (
                      <div className="aspect-video w-full overflow-hidden rounded-t-lg bg-gray-100 dark:bg-gray-900 border-b dark:border-gray-700">
@@ -448,7 +443,7 @@ const ClientDetails = () => {
                      <div className="text-xs text-muted-foreground capitalize">{doc.file_type === 'image' ? 'Imagen' : doc.file_type}</div>
                      <Button variant="default" size="sm" className="w-full mt-2 bg-energen-blue/10 text-energen-blue hover:bg-energen-blue/20 dark:bg-energen-blue/20 dark:text-blue-300" onClick={(e) => {
                        e.stopPropagation();
-                       if(doc.publicUrl) openFile(doc.publicUrl);
+                       openFile(doc.file_path);
                      }}>
                        <Download className="mr-2 h-4 w-4" /> Abrir / Descargar
                      </Button>
