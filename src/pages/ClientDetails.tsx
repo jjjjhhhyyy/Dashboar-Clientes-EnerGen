@@ -8,6 +8,7 @@ import { UploadDocumentDialog } from "../components/documents/UploadDocumentDial
 import { ClientDialog } from "../components/clients/ClientDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   Table, 
@@ -17,8 +18,10 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { ArrowLeft, MapPin, Phone, Zap, Settings, FileText, Download, Calendar, Trash2 } from "lucide-react";
+import { ArrowLeft, MapPin, Phone, Zap, FileText, Download, Calendar, Trash2, Edit2, Save, X } from "lucide-react";
 import { toast } from "sonner";
+import { format, differenceInDays } from "date-fns";
+import { es } from "date-fns/locale";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +32,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 const ClientDetails = () => {
   const { id } = useParams();
@@ -39,8 +49,10 @@ const ClientDetails = () => {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // State for deletion
+  // Estados para acciones
   const [deleteItem, setDeleteItem] = useState<{ type: 'equipment' | 'service' | 'document', id: string } | null>(null);
+  const [renamingDoc, setRenamingDoc] = useState<Document | null>(null);
+  const [newName, setNewName] = useState("");
 
   const fetchAll = useCallback(async () => {
     if (!id) return;
@@ -68,6 +80,7 @@ const ClientDetails = () => {
     fetchAll();
   }, [fetchAll]);
 
+  // --- Lógica de borrado ---
   const confirmDelete = async () => {
     if (!deleteItem) return;
 
@@ -77,7 +90,6 @@ const ClientDetails = () => {
       if (deleteItem.type === 'service') table = 'services';
       if (deleteItem.type === 'document') table = 'documents';
 
-      // Special case for documents: remove from storage
       if (deleteItem.type === 'document') {
         const doc = documents.find(d => d.id === deleteItem.id);
         if (doc) {
@@ -97,11 +109,47 @@ const ClientDetails = () => {
     }
   };
 
-  const handleDownload = async (path: string, fileName: string) => {
+  // --- Lógica de renombrado ---
+  const startRenaming = (doc: Document) => {
+    setRenamingDoc(doc);
+    setNewName(doc.file_name);
+  };
+
+  const handleRename = async () => {
+    if (!renamingDoc || !newName.trim()) return;
+
+    try {
+      const { error } = await supabase
+        .from("documents")
+        .update({ file_name: newName })
+        .eq("id", renamingDoc.id);
+
+      if (error) throw error;
+      toast.success("Nombre actualizado");
+      setRenamingDoc(null);
+      fetchAll();
+    } catch (error: any) {
+      toast.error("Error al renombrar: " + error.message);
+    }
+  };
+
+  // --- Lógica de vista previa ---
+  const handlePreview = async (path: string) => {
     const { data } = supabase.storage.from("documents").getPublicUrl(path);
     if (data) {
       window.open(data.publicUrl, '_blank');
     }
+  };
+
+  const getServiceStatus = (dateString?: string) => {
+    if (!dateString) return null;
+    const date = new Date(dateString);
+    const today = new Date();
+    const days = differenceInDays(date, today);
+
+    if (days < 0) return { color: "text-red-600 bg-red-50", text: `Vencido hace ${Math.abs(days)} días` };
+    if (days <= 7) return { color: "text-amber-600 bg-amber-50", text: `Vence en ${days} días` };
+    return { color: "text-green-600 bg-green-50", text: format(date, "dd/MM/yyyy") };
   };
 
   if (loading) return <div className="p-8 text-center dark:text-white">Cargando información...</div>;
@@ -109,14 +157,12 @@ const ClientDetails = () => {
 
   return (
     <div className="space-y-6">
-      {/* Delete Confirmation Dialog */}
+      {/* Dialogo Eliminar */}
       <AlertDialog open={!!deleteItem} onOpenChange={(open) => !open && setDeleteItem(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar elemento?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción no se puede deshacer. Se borrará permanentemente de la base de datos.
-            </AlertDialogDescription>
+            <AlertDialogDescription>Esta acción no se puede deshacer.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
@@ -124,6 +170,26 @@ const ClientDetails = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialogo Renombrar */}
+      <Dialog open={!!renamingDoc} onOpenChange={(open) => !open && setRenamingDoc(null)}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Cambiar nombre del archivo</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Input 
+              value={newName} 
+              onChange={(e) => setNewName(e.target.value)} 
+              placeholder="Nuevo nombre..." 
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenamingDoc(null)}>Cancelar</Button>
+            <Button onClick={handleRename} className="bg-energen-blue">Guardar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -155,8 +221,7 @@ const ClientDetails = () => {
         <TabsContent value="equipment" className="mt-6 space-y-4">
           <div className="flex justify-between items-center">
              <div>
-               <h3 className="text-lg font-medium dark:text-white">Flota de Generadores</h3>
-               <p className="text-sm text-muted-foreground">Administra los equipos instalados.</p>
+               <h3 className="text-lg font-medium dark:text-white">Flota de Equipos</h3>
              </div>
              <CreateEquipmentDialog clientId={client.id} onEquipmentCreated={fetchAll} />
           </div>
@@ -166,10 +231,9 @@ const ClientDetails = () => {
               <Table>
                 <TableHeader>
                   <TableRow className="dark:border-gray-700">
-                    <TableHead className="dark:text-gray-300">Modelo</TableHead>
-                    <TableHead className="dark:text-gray-300">N° Serie</TableHead>
+                    <TableHead className="dark:text-gray-300">Equipo</TableHead>
                     <TableHead className="dark:text-gray-300">Potencia</TableHead>
-                    <TableHead className="hidden md:table-cell dark:text-gray-300">Detalles</TableHead>
+                    <TableHead className="dark:text-gray-300">Próximo Service</TableHead>
                     <TableHead className="text-right dark:text-gray-300">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -181,22 +245,32 @@ const ClientDetails = () => {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    equipments.map((eq) => (
+                    equipments.map((eq) => {
+                      const status = getServiceStatus(eq.next_service_date);
+                      return (
                       <TableRow key={eq.id} className="dark:border-gray-700">
                         <TableCell className="font-medium dark:text-white">
                           <div className="flex items-center gap-2">
                             <div className="bg-blue-50 dark:bg-blue-900/30 p-2 rounded text-blue-600 dark:text-blue-400">
                               <Zap size={16} />
                             </div>
-                            {eq.model}
+                            <div>
+                              <div>{eq.model}</div>
+                              <div className="text-xs text-gray-400 font-mono">{eq.serial_number}</div>
+                            </div>
                           </div>
                         </TableCell>
-                        <TableCell className="font-mono text-xs dark:text-gray-300">{eq.serial_number}</TableCell>
                         <TableCell className="dark:text-gray-300">
                           {eq.kva ? <><span className="font-bold">{eq.kva}</span> kVA</> : "-"}
                         </TableCell>
-                        <TableCell className="hidden md:table-cell text-sm text-gray-500 dark:text-gray-400">
-                          <div>M: {eq.engine || "-"}</div>
+                        <TableCell>
+                          {status ? (
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium border border-transparent ${status.color}`}>
+                              {status.text}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 text-xs">-</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button 
@@ -209,7 +283,7 @@ const ClientDetails = () => {
                           </Button>
                         </TableCell>
                       </TableRow>
-                    ))
+                    )})
                   )}
                 </TableBody>
               </Table>
@@ -221,8 +295,7 @@ const ClientDetails = () => {
         <TabsContent value="services" className="mt-6 space-y-4">
           <div className="flex justify-between items-center">
              <div>
-               <h3 className="text-lg font-medium dark:text-white">Historial de Mantenimientos</h3>
-               <p className="text-sm text-muted-foreground">Registro de actividades técnicas.</p>
+               <h3 className="text-lg font-medium dark:text-white">Historial</h3>
              </div>
              <CreateServiceDialog clientId={client.id} onServiceCreated={fetchAll} />
           </div>
@@ -251,7 +324,7 @@ const ClientDetails = () => {
                         <TableCell className="dark:text-white">
                            <div className="flex items-center gap-2">
                              <Calendar className="h-4 w-4 text-gray-400" />
-                             {svc.date}
+                             {format(new Date(svc.date + 'T00:00:00'), 'dd/MM/yyyy')}
                            </div>
                         </TableCell>
                         <TableCell className="dark:text-gray-300 max-w-md truncate" title={svc.description}>
@@ -284,7 +357,6 @@ const ClientDetails = () => {
            <div className="flex justify-between items-center">
              <div>
                <h3 className="text-lg font-medium dark:text-white">Documentación</h3>
-               <p className="text-sm text-muted-foreground">Facturas, presupuestos e imágenes.</p>
              </div>
              <UploadDocumentDialog clientId={client.id} onUploadComplete={fetchAll} />
           </div>
@@ -292,15 +364,26 @@ const ClientDetails = () => {
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
              {documents.map((doc) => (
                <Card key={doc.id} className="dark:bg-gray-800 dark:border-gray-700 hover:shadow-md transition-shadow relative group">
-                 <Button 
-                    variant="destructive" 
-                    size="icon" 
-                    className="absolute top-2 right-2 h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={() => setDeleteItem({ type: 'document', id: doc.id })}
-                 >
-                   <Trash2 className="h-4 w-4" />
-                 </Button>
-                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                 <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/80 dark:bg-black/50 rounded-md p-1">
+                   <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-7 w-7"
+                      onClick={() => startRenaming(doc)}
+                   >
+                     <Edit2 className="h-3 w-3 text-blue-600" />
+                   </Button>
+                   <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-7 w-7"
+                      onClick={() => setDeleteItem({ type: 'document', id: doc.id })}
+                   >
+                     <Trash2 className="h-3 w-3 text-red-600" />
+                   </Button>
+                 </div>
+                 
+                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 cursor-pointer" onClick={() => handlePreview(doc.file_path)}>
                    <CardTitle className="text-sm font-medium dark:text-white truncate pr-6" title={doc.file_name}>
                      {doc.file_name}
                    </CardTitle>
@@ -308,8 +391,8 @@ const ClientDetails = () => {
                  </CardHeader>
                  <CardContent>
                    <div className="text-xs text-muted-foreground mb-4 capitalize">{doc.file_type}</div>
-                   <Button variant="outline" size="sm" className="w-full" onClick={() => handleDownload(doc.file_path, doc.file_name)}>
-                     <Download className="mr-2 h-4 w-4" /> Descargar
+                   <Button variant="outline" size="sm" className="w-full" onClick={() => handlePreview(doc.file_path)}>
+                     <Download className="mr-2 h-4 w-4" /> Abrir / Descargar
                    </Button>
                  </CardContent>
                </Card>

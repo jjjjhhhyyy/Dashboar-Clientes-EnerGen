@@ -19,11 +19,12 @@ export interface Equipment {
   type: EquipmentType;
   model: string;
   serial_number: string;
-  kva?: number; // Opcional porque un tractor no tiene kVA
-  engine: string;
-  alternator: string;
-  year?: number;
+  kva?: number;
+  next_service_date?: string; // Nuevo campo para alertas
   created_at?: string;
+  
+  // Para joins
+  clients?: { name: string, city: string }; 
 }
 
 export interface Service {

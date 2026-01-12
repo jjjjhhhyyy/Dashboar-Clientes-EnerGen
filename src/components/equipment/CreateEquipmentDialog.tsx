@@ -36,11 +36,8 @@ import { Input } from "@/components/ui/input";
 const formSchema = z.object({
   type: z.string().min(1, "El tipo es requerido"),
   model: z.string().min(1, "El modelo es requerido"),
-  serial_number: z.string().min(1, "El número de serie es requerido"),
+  serial_number: z.string().optional(), // Ahora es opcional por si no lo tienen a mano
   kva: z.coerce.number().optional(),
-  engine: z.string().optional(),
-  alternator: z.string().optional(),
-  year: z.coerce.number().min(1900, "Año inválido").max(new Date().getFullYear() + 1, "Año inválido").optional(),
 });
 
 interface CreateEquipmentDialogProps {
@@ -59,9 +56,6 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEq
       model: "",
       serial_number: "",
       kva: 0,
-      engine: "",
-      alternator: "",
-      year: new Date().getFullYear(),
     },
   });
 
@@ -76,11 +70,8 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEq
         client_id: clientId,
         type: values.type,
         model: values.model,
-        serial_number: values.serial_number,
-        kva: isGenerator ? values.kva : null, // Solo guardar kVA si es generador
-        engine: values.engine || null,
-        alternator: values.alternator || null,
-        year: values.year || null,
+        serial_number: values.serial_number || "S/N", // Valor por defecto
+        kva: isGenerator ? values.kva : null,
       });
 
       if (error) throw error;
@@ -103,11 +94,11 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEq
           <Plus className="mr-2 h-4 w-4" /> Agregar Equipo
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle>Registrar Máquina o Equipo</DialogTitle>
+          <DialogTitle>Registrar Equipo</DialogTitle>
           <DialogDescription>
-            Ingresa los detalles técnicos de la unidad.
+            Datos básicos del equipo.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -118,7 +109,7 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEq
               name="type"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Tipo de Equipo</FormLabel>
+                  <FormLabel>Tipo</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger>
@@ -126,10 +117,11 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEq
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="Generador">Generador / Grupo Electrógeno</SelectItem>
+                      <SelectItem value="Generador">Generador</SelectItem>
                       <SelectItem value="Tractor">Tractor</SelectItem>
                       <SelectItem value="Sampi">Sampi / Autoelevador</SelectItem>
-                      <SelectItem value="Máquina">Máquina Vial / Otra</SelectItem>
+                      <SelectItem value="Máquina">Máquina Vial</SelectItem>
+                      <SelectItem value="Otro">Otro</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -137,88 +129,27 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEq
               )}
             />
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="model"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Modelo</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Ej. John Deere / Cummins" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              {isGenerator && (
-                <FormField
-                  control={form.control}
-                  name="kva"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Potencia (kVA)</FormLabel>
-                      <FormControl>
-                        <Input type="number" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
-            </div>
-
             <FormField
               control={form.control}
-              name="serial_number"
+              name="model"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Número de Serie / Chasis</FormLabel>
+                  <FormLabel>Modelo / Marca</FormLabel>
                   <FormControl>
-                    <Input placeholder="Ej. L21L123456" {...field} />
+                    <Input placeholder="Ej. Cummins 20kVA" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-
-            <div className="grid grid-cols-2 gap-4">
-               <FormField
+              
+            {isGenerator && (
+              <FormField
                 control={form.control}
-                name="engine"
+                name="kva"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Motor</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Marca/Modelo" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-               {isGenerator && (
-                 <FormField
-                  control={form.control}
-                  name="alternator"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Alternador</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Marca/Modelo" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-               )}
-            </div>
-             <FormField
-                control={form.control}
-                name="year"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Año de Fab.</FormLabel>
+                    <FormLabel>Potencia (kVA)</FormLabel>
                     <FormControl>
                       <Input type="number" {...field} />
                     </FormControl>
@@ -226,11 +157,26 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEq
                   </FormItem>
                 )}
               />
+            )}
+
+            <FormField
+              control={form.control}
+              name="serial_number"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>N° Serie (Opcional)</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Ej. XYZ-123" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <DialogFooter>
               <Button type="submit" disabled={loading} className="w-full bg-energen-blue">
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Guardar Equipo
+                Guardar
               </Button>
             </DialogFooter>
           </form>
