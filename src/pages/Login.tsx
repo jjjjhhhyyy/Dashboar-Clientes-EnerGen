@@ -6,12 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Lock, Loader2, Zap } from "lucide-react";
+import { Lock, Loader2 } from "lucide-react";
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false); // Estado para alternar entre Login y Registro
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -21,22 +22,29 @@ const Login = () => {
     });
   }, [navigate]);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) throw error;
-      
-      toast.success("Bienvenido a EnerGen");
-      navigate("/");
+      if (isSignUp) {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+        });
+        if (error) throw error;
+        toast.success("Cuenta creada. Por favor verifica tu correo si es necesario.");
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (error) throw error;
+        toast.success("Bienvenido a EnerGen");
+        navigate("/");
+      }
     } catch (error: any) {
-      toast.error(error.message || "Error al iniciar sesión");
+      toast.error(error.message || "Error de autenticación");
     } finally {
       setLoading(false);
     }
@@ -47,23 +55,31 @@ const Login = () => {
       <div className="absolute inset-0 bg-gradient-to-br from-energen-blue/10 to-transparent pointer-events-none" />
       
       <Card className="w-full max-w-md shadow-xl border-t-4 border-t-energen-blue z-10">
-        <CardHeader className="text-center space-y-4">
-          <div className="mx-auto bg-energen-blue w-16 h-16 rounded-xl flex items-center justify-center shadow-lg">
-            <Zap className="h-8 w-8 text-white" fill="currentColor" />
+        <CardHeader className="text-center space-y-4 pb-2">
+          <div className="mx-auto flex justify-center mb-4">
+             <img 
+               src="https://storage.googleapis.com/msgsndr/W7R1X8YOEgKpF0ad1L2W/media/690661473081bc838e4020d0.png" 
+               alt="EnerGen Logo" 
+               className="h-20 w-auto object-contain"
+             />
           </div>
           <div>
-            <CardTitle className="text-2xl font-bold text-energen-slate">EnerGen Ingeniería</CardTitle>
-            <CardDescription>Gestión Técnica de Grupos Electrógenos</CardDescription>
+            <CardTitle className="text-2xl font-bold text-energen-slate">
+              {isSignUp ? "Crear Cuenta" : "EnerGen Ingeniería"}
+            </CardTitle>
+            <CardDescription>
+              {isSignUp ? "Registra una nueva cuenta administrativa" : "Gestión Técnica de Grupos Electrógenos"}
+            </CardDescription>
           </div>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleLogin} className="space-y-4">
+          <form onSubmit={handleAuth} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Correo Electrónico</Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="tecnico@energen.com"
+                placeholder="nombre@energen.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -92,16 +108,23 @@ const Login = () => {
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Iniciando...
+                  Procesando...
                 </>
               ) : (
-                "Iniciar Sesión"
+                isSignUp ? "Registrarse" : "Iniciar Sesión"
               )}
             </Button>
           </form>
         </CardContent>
-        <CardFooter className="justify-center border-t pt-6 text-sm text-gray-500">
-          <p>© {new Date().getFullYear()} EnerGen Ingeniería. Sistema de Gestión.</p>
+        <CardFooter className="justify-center border-t pt-4 text-sm flex flex-col gap-2">
+          <button 
+            type="button"
+            onClick={() => setIsSignUp(!isSignUp)}
+            className="text-energen-blue hover:underline font-medium"
+          >
+            {isSignUp ? "¿Ya tienes cuenta? Inicia sesión" : "¿No tienes cuenta? Regístrate aquí"}
+          </button>
+          <p className="text-gray-400 text-xs mt-2">© {new Date().getFullYear()} EnerGen Ingeniería.</p>
         </CardFooter>
       </Card>
     </div>

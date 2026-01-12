@@ -7,7 +7,6 @@ import {
   LogOut, 
   Menu, 
   X, 
-  Zap,
   ChevronRight
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -63,12 +62,12 @@ const Layout = () => {
         )}
       >
         <div className="p-6 flex items-center gap-3 border-b border-white/10">
-          <div className="bg-energen-blue p-2 rounded-lg">
-            <Zap className="h-6 w-6 text-white" fill="currentColor" />
-          </div>
-          <div>
-            <h1 className="font-bold text-lg leading-none">EnerGen</h1>
-            <p className="text-xs text-gray-400 mt-1">Ingeniería</p>
+          <div className="w-full flex justify-center lg:justify-start">
+             <img 
+               src="https://storage.googleapis.com/msgsndr/W7R1X8YOEgKpF0ad1L2W/media/690661473081bc838e4020d0.png" 
+               alt="EnerGen" 
+               className="h-12 w-auto object-contain bg-white/10 p-1 rounded-md" 
+             />
           </div>
         </div>
 
@@ -126,7 +125,7 @@ const Layout = () => {
           <div className="ml-auto flex items-center gap-4">
              {/* Header actions can go here */}
              <div className="w-8 h-8 rounded-full bg-energen-blue/10 flex items-center justify-center text-energen-blue font-bold text-sm">
-               T
+               EG
              </div>
           </div>
         </header>
