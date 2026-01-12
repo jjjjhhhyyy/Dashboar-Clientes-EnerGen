@@ -17,7 +17,18 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { ArrowLeft, MapPin, Phone, Zap, Settings, FileText, Download, Calendar } from "lucide-react";
+import { ArrowLeft, MapPin, Phone, Zap, Settings, FileText, Download, Calendar, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const ClientDetails = () => {
   const { id } = useParams();
@@ -27,6 +38,9 @@ const ClientDetails = () => {
   const [services, setServices] = useState<Service[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // State for deletion
+  const [deleteItem, setDeleteItem] = useState<{ type: 'equipment' | 'service' | 'document', id: string } | null>(null);
 
   const fetchAll = useCallback(async () => {
     if (!id) return;
@@ -54,8 +68,34 @@ const ClientDetails = () => {
     fetchAll();
   }, [fetchAll]);
 
-  if (loading) return <div className="p-8 text-center dark:text-white">Cargando información...</div>;
-  if (!client) return <div className="p-8 text-center dark:text-white">Cliente no encontrado</div>;
+  const confirmDelete = async () => {
+    if (!deleteItem) return;
+
+    try {
+      let table = "";
+      if (deleteItem.type === 'equipment') table = 'equipment';
+      if (deleteItem.type === 'service') table = 'services';
+      if (deleteItem.type === 'document') table = 'documents';
+
+      // Special case for documents: remove from storage
+      if (deleteItem.type === 'document') {
+        const doc = documents.find(d => d.id === deleteItem.id);
+        if (doc) {
+          await supabase.storage.from('documents').remove([doc.file_path]);
+        }
+      }
+
+      const { error } = await supabase.from(table).delete().eq('id', deleteItem.id);
+      if (error) throw error;
+
+      toast.success("Elemento eliminado");
+      fetchAll();
+    } catch (error: any) {
+      toast.error("Error al eliminar: " + error.message);
+    } finally {
+      setDeleteItem(null);
+    }
+  };
 
   const handleDownload = async (path: string, fileName: string) => {
     const { data } = supabase.storage.from("documents").getPublicUrl(path);
@@ -64,8 +104,27 @@ const ClientDetails = () => {
     }
   };
 
+  if (loading) return <div className="p-8 text-center dark:text-white">Cargando información...</div>;
+  if (!client) return <div className="p-8 text-center dark:text-white">Cliente no encontrado</div>;
+
   return (
     <div className="space-y-6">
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deleteItem} onOpenChange={(open) => !open && setDeleteItem(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar elemento?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Se borrará permanentemente de la base de datos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">Eliminar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
@@ -111,7 +170,7 @@ const ClientDetails = () => {
                     <TableHead className="dark:text-gray-300">N° Serie</TableHead>
                     <TableHead className="dark:text-gray-300">Potencia</TableHead>
                     <TableHead className="hidden md:table-cell dark:text-gray-300">Detalles</TableHead>
-                    <TableHead className="dark:text-gray-300">Acciones</TableHead>
+                    <TableHead className="text-right dark:text-gray-300">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -134,14 +193,19 @@ const ClientDetails = () => {
                         </TableCell>
                         <TableCell className="font-mono text-xs dark:text-gray-300">{eq.serial_number}</TableCell>
                         <TableCell className="dark:text-gray-300">
-                          <span className="font-bold">{eq.kva}</span> kVA
+                          {eq.kva ? <><span className="font-bold">{eq.kva}</span> kVA</> : "-"}
                         </TableCell>
                         <TableCell className="hidden md:table-cell text-sm text-gray-500 dark:text-gray-400">
                           <div>M: {eq.engine || "-"}</div>
                         </TableCell>
-                        <TableCell>
-                          <Button variant="ghost" size="sm">
-                             <Settings className="h-4 w-4" />
+                        <TableCell className="text-right">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                            onClick={() => setDeleteItem({ type: 'equipment', id: eq.id })}
+                          >
+                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -171,12 +235,13 @@ const ClientDetails = () => {
                     <TableHead className="dark:text-gray-300">Fecha</TableHead>
                     <TableHead className="dark:text-gray-300">Descripción</TableHead>
                     <TableHead className="dark:text-gray-300">Técnico</TableHead>
+                    <TableHead className="text-right dark:text-gray-300">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {services.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-center py-8 text-gray-500">
+                      <TableCell colSpan={4} className="text-center py-8 text-gray-500">
                         No hay servicios registrados.
                       </TableCell>
                     </TableRow>
@@ -194,6 +259,16 @@ const ClientDetails = () => {
                         </TableCell>
                         <TableCell className="dark:text-gray-300">
                           {svc.technician}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                            onClick={() => setDeleteItem({ type: 'service', id: svc.id })}
+                          >
+                             <Trash2 className="h-4 w-4" />
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))
@@ -216,9 +291,17 @@ const ClientDetails = () => {
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
              {documents.map((doc) => (
-               <Card key={doc.id} className="dark:bg-gray-800 dark:border-gray-700 hover:shadow-md transition-shadow">
+               <Card key={doc.id} className="dark:bg-gray-800 dark:border-gray-700 hover:shadow-md transition-shadow relative group">
+                 <Button 
+                    variant="destructive" 
+                    size="icon" 
+                    className="absolute top-2 right-2 h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => setDeleteItem({ type: 'document', id: doc.id })}
+                 >
+                   <Trash2 className="h-4 w-4" />
+                 </Button>
                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                   <CardTitle className="text-sm font-medium dark:text-white truncate" title={doc.file_name}>
+                   <CardTitle className="text-sm font-medium dark:text-white truncate pr-6" title={doc.file_name}>
                      {doc.file_name}
                    </CardTitle>
                    <FileText className="h-4 w-4 text-muted-foreground" />

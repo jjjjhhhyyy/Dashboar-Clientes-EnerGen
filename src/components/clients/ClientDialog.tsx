@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Plus, Edit } from "lucide-react";
+import { Loader2, Plus, Edit, Trash2, AlertTriangle } from "lucide-react";
 import { Client } from "@/types";
 
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   Form,
   FormControl,
@@ -33,6 +44,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useNavigate } from "react-router-dom";
 
 const formSchema = z.object({
   name: z.string().min(2, "El nombre debe tener al menos 2 caracteres"),
@@ -65,6 +77,8 @@ export function ClientDialog({ clientToEdit, onClientSaved }: ClientDialogProps)
   // Estado para las listas dinámicas
   const [provincesList, setProvincesList] = useState<string[]>(INITIAL_PROVINCES);
   const [citiesMap, setCitiesMap] = useState<Record<string, string[]>>(INITIAL_CITIES);
+
+  const navigate = useNavigate();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -215,6 +229,28 @@ export function ClientDialog({ clientToEdit, onClientSaved }: ClientDialogProps)
     }
   }
 
+  const handleDelete = async () => {
+    if (!clientToEdit) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('clients').delete().eq('id', clientToEdit.id);
+      if (error) throw error;
+      
+      toast.success("Cliente eliminado correctamente");
+      setOpen(false);
+      // Si estamos en la página de detalles, volver al listado
+      if (window.location.pathname.includes(clientToEdit.id)) {
+        navigate("/clients");
+      } else {
+        onClientSaved();
+      }
+    } catch (error: any) {
+      toast.error("Error al eliminar: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const currentCities = citiesMap[selectedProvince] || [];
 
   return (
@@ -349,10 +385,35 @@ export function ClientDialog({ clientToEdit, onClientSaved }: ClientDialogProps)
               )}
             />
 
-            <DialogFooter>
-              <Button type="submit" disabled={loading} className="w-full bg-energen-blue">
+            <DialogFooter className="flex gap-2 sm:justify-between">
+              {clientToEdit && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button type="button" variant="destructive" className="w-full sm:w-auto">
+                      <Trash2 className="h-4 w-4 mr-2" /> Eliminar
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Esta acción no se puede deshacer. Se eliminará el cliente 
+                        <strong> {clientToEdit.name} </strong> y todos sus equipos, servicios y documentos asociados.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
+                        Sí, eliminar todo
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+              
+              <Button type="submit" disabled={loading} className="w-full sm:w-auto bg-energen-blue ml-auto">
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {clientToEdit ? "Actualizar" : "Guardar Cliente"}
+                {clientToEdit ? "Guardar Cambios" : "Guardar Cliente"}
               </Button>
             </DialogFooter>
           </form>
