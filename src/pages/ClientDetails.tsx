@@ -69,7 +69,6 @@ const ClientDetails = () => {
     if (servData) setServices(servData as Service[]);
 
     // 4. Documents & Generate URLs for Images
-    // CORRECCIÓN: Usar 'uploaded_at' en lugar de 'created_at'
     const { data: docData, error: docError } = await supabase
       .from("documents")
       .select("*")
@@ -81,11 +80,11 @@ const ClientDetails = () => {
     }
 
     if (docData) {
-      const docsWithUrls = docData.map(doc => {
-        // Aseguramos obtener la URL pública
-        const { data } = supabase.storage.from("documents").getPublicUrl(doc.file_path);
-        return { ...doc, publicUrl: data.publicUrl };
-      });
+      // Generamos URLs firmadas (válidas por 1 hora) para que se puedan ver archivos privados
+      const docsWithUrls = await Promise.all(docData.map(async (doc) => {
+        const { data } = await supabase.storage.from("documents").createSignedUrl(doc.file_path, 3600);
+        return { ...doc, publicUrl: data?.signedUrl };
+      }));
       setDocuments(docsWithUrls as (Document & { publicUrl?: string })[]);
     } else {
       setDocuments([]);
@@ -97,6 +96,17 @@ const ClientDetails = () => {
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
+
+  // --- Helper para abrir archivos con URL firmada al vuelo (para la tabla de servicios) ---
+  const openSignedUrl = async (filePath: string) => {
+    try {
+      const { data, error } = await supabase.storage.from("documents").createSignedUrl(filePath, 3600);
+      if (error) throw error;
+      if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+    } catch (err: any) {
+      toast.error("No se pudo abrir el archivo: " + err.message);
+    }
+  };
 
   // --- Lógica de borrado ---
   const confirmDelete = async () => {
@@ -353,10 +363,7 @@ const ClientDetails = () => {
                         <TableCell className="dark:text-gray-300 max-w-md truncate" title={svc.description}>
                           {svc.description}
                           {(svc as any).file_path && (
-                             <Button variant="link" className="h-auto p-0 ml-2 text-blue-600" onClick={() => {
-                               const { data } = supabase.storage.from("documents").getPublicUrl((svc as any).file_path);
-                               if(data) window.open(data.publicUrl, '_blank');
-                             }}>
+                             <Button variant="link" className="h-auto p-0 ml-2 text-blue-600" onClick={() => openSignedUrl((svc as any).file_path)}>
                                [Ver PDF]
                              </Button>
                           )}
