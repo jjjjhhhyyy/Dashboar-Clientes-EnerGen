@@ -7,7 +7,9 @@ import {
   LogOut, 
   Menu, 
   X, 
-  ChevronRight
+  ChevronRight,
+  Sun,
+  Moon
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -17,6 +19,7 @@ const Layout = () => {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -29,10 +32,29 @@ const Layout = () => {
       }
     };
     
+    // Check dark mode preference
+    if (localStorage.getItem("theme") === "dark" || 
+       (!localStorage.getItem("theme") && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+      setIsDarkMode(true);
+      document.documentElement.classList.add("dark");
+    }
+
     checkMobile();
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
+
+  const toggleTheme = () => {
+    const newMode = !isDarkMode;
+    setIsDarkMode(newMode);
+    if (newMode) {
+      document.documentElement.classList.add("dark");
+      localStorage.setItem("theme", "dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+      localStorage.setItem("theme", "light");
+    }
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -45,7 +67,7 @@ const Layout = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex transition-colors duration-300">
       {/* Mobile Overlay */}
       {isMobile && sidebarOpen && (
         <div 
@@ -57,7 +79,7 @@ const Layout = () => {
       {/* Sidebar */}
       <aside 
         className={cn(
-          "fixed lg:static inset-y-0 left-0 z-50 w-64 bg-energen-slate text-white transition-transform duration-300 ease-in-out shadow-2xl flex flex-col",
+          "fixed lg:static inset-y-0 left-0 z-50 w-64 bg-energen-slate dark:bg-black text-white transition-transform duration-300 ease-in-out shadow-2xl flex flex-col",
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:hidden"
         )}
       >
@@ -98,7 +120,15 @@ const Layout = () => {
           })}
         </nav>
 
-        <div className="p-4 border-t border-white/10">
+        <div className="p-4 border-t border-white/10 space-y-2">
+          <Button
+            variant="ghost"
+            className="w-full justify-start text-gray-300 hover:text-white hover:bg-white/10"
+            onClick={toggleTheme}
+          >
+            {isDarkMode ? <Sun className="mr-3 h-5 w-5" /> : <Moon className="mr-3 h-5 w-5" />}
+            {isDarkMode ? "Modo Día" : "Modo Noche"}
+          </Button>
           <Button 
             variant="ghost" 
             className="w-full justify-start text-red-400 hover:text-red-300 hover:bg-white/5"
@@ -112,25 +142,24 @@ const Layout = () => {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 min-h-screen overflow-hidden">
-        <header className="h-16 bg-white border-b shadow-sm flex items-center justify-between px-4 lg:px-8">
+        <header className="h-16 bg-white dark:bg-gray-800 border-b dark:border-gray-700 shadow-sm flex items-center justify-between px-4 lg:px-8 transition-colors duration-300">
           <Button
             variant="ghost"
             size="icon"
-            className="lg:hidden"
+            className="lg:hidden dark:text-white"
             onClick={() => setSidebarOpen(!sidebarOpen)}
           >
             {sidebarOpen ? <X /> : <Menu />}
           </Button>
           
           <div className="ml-auto flex items-center gap-4">
-             {/* Header actions can go here */}
-             <div className="w-8 h-8 rounded-full bg-energen-blue/10 flex items-center justify-center text-energen-blue font-bold text-sm">
+             <div className="w-8 h-8 rounded-full bg-energen-blue/10 dark:bg-energen-blue/30 flex items-center justify-center text-energen-blue dark:text-blue-200 font-bold text-sm">
                EG
              </div>
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto p-4 lg:p-8">
+        <div className="flex-1 overflow-auto p-4 lg:p-8 dark:text-white">
           <Outlet />
         </div>
       </main>

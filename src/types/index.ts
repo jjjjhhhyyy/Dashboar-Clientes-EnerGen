@@ -35,6 +35,6 @@ export interface Document {
   client_id: string;
   file_name: string;
   file_path: string;
-  file_type: 'image' | 'report';
+  file_type: 'image' | 'report' | 'invoice' | 'budget' | 'other';
   created_at: string;
 }

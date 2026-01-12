@@ -1,0 +1,327 @@
+import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { Loader2, Plus, Edit } from "lucide-react";
+import { Client } from "@/types";
+
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const formSchema = z.object({
+  name: z.string().min(2, "El nombre debe tener al menos 2 caracteres"),
+  province: z.string().min(1, "Selecciona una provincia"),
+  custom_province: z.string().optional(),
+  city: z.string().min(1, "Selecciona una ciudad"),
+  custom_city: z.string().optional(),
+  address: z.string().min(5, "La dirección es requerida"),
+  phone: z.string().min(6, "El teléfono es requerido"),
+});
+
+const PROVINCES = ["Misiones", "Corrientes", "Chaco", "Formosa", "Entre Ríos"];
+const CITIES_BY_PROVINCE: Record<string, string[]> = {
+  "Misiones": ["Posadas", "Oberá", "Eldorado", "Puerto Iguazú", "Apóstoles", "Leandro N. Alem"],
+  "Corrientes": ["Corrientes Capital", "Goya", "Paso de los Libres", "Curuzú Cuatiá", "Ituzaingó"],
+  "Chaco": ["Resistencia", "Sáenz Peña"],
+};
+
+interface ClientDialogProps {
+  clientToEdit?: Client;
+  onClientSaved: () => void;
+}
+
+export function ClientDialog({ clientToEdit, onClientSaved }: ClientDialogProps) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [showCustomProvince, setShowCustomProvince] = useState(false);
+  const [showCustomCity, setShowCustomCity] = useState(false);
+
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      name: "",
+      province: "",
+      custom_province: "",
+      city: "",
+      custom_city: "",
+      address: "",
+      phone: "",
+    },
+  });
+
+  // Cargar datos si es edición
+  useEffect(() => {
+    if (clientToEdit && open) {
+      const isCustomProv = !PROVINCES.includes(clientToEdit.province);
+      const isCustomCity = !CITIES_BY_PROVINCE[clientToEdit.province]?.includes(clientToEdit.city);
+
+      form.reset({
+        name: clientToEdit.name,
+        address: clientToEdit.address,
+        phone: clientToEdit.phone,
+        province: isCustomProv ? "other" : clientToEdit.province,
+        custom_province: isCustomProv ? clientToEdit.province : "",
+        city: isCustomCity ? "other" : clientToEdit.city,
+        custom_city: isCustomCity ? clientToEdit.city : "",
+      });
+      setShowCustomProvince(isCustomProv);
+      setShowCustomCity(isCustomCity);
+    } else if (!clientToEdit && open) {
+      form.reset({
+         name: "", province: "", custom_province: "", city: "", custom_city: "", address: "", phone: ""
+      });
+      setShowCustomProvince(false);
+      setShowCustomCity(false);
+    }
+  }, [clientToEdit, open, form]);
+
+  const selectedProvince = form.watch("province");
+
+  const handleProvinceChange = (value: string) => {
+    form.setValue("province", value);
+    if (value === "other") {
+      setShowCustomProvince(true);
+      setShowCustomCity(true);
+      form.setValue("city", "other");
+    } else {
+      setShowCustomProvince(false);
+      const cities = CITIES_BY_PROVINCE[value];
+      if (!cities) {
+         setShowCustomCity(true);
+         form.setValue("city", "other");
+      } else {
+         setShowCustomCity(false);
+         form.setValue("city", "");
+      }
+    }
+  };
+
+  const handleCityChange = (value: string) => {
+    form.setValue("city", value);
+    if (value === "other") {
+      setShowCustomCity(true);
+    } else {
+      setShowCustomCity(false);
+    }
+  };
+
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    setLoading(true);
+    
+    const finalProvince = values.province === "other" ? values.custom_province : values.province;
+    const finalCity = values.city === "other" ? values.custom_city : values.city;
+
+    if (!finalProvince || !finalCity) {
+      toast.error("Por favor completa la provincia y ciudad");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const clientData = {
+        name: values.name,
+        province: finalProvince,
+        city: finalCity,
+        address: values.address,
+        phone: values.phone,
+        status: clientToEdit ? clientToEdit.status : "Activo",
+      };
+
+      let error;
+      if (clientToEdit) {
+        const { error: updateError } = await supabase
+          .from("clients")
+          .update(clientData)
+          .eq("id", clientToEdit.id);
+        error = updateError;
+      } else {
+        const { error: insertError } = await supabase
+          .from("clients")
+          .insert(clientData);
+        error = insertError;
+      }
+
+      if (error) throw error;
+
+      toast.success(clientToEdit ? "Cliente actualizado" : "Cliente creado exitosamente");
+      setOpen(false);
+      onClientSaved();
+    } catch (error: any) {
+      toast.error("Error: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const currentCities = CITIES_BY_PROVINCE[selectedProvince] || [];
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        {clientToEdit ? (
+           <Button variant="outline" size="sm">
+             <Edit className="h-4 w-4 mr-2" /> Editar
+           </Button>
+        ) : (
+          <Button className="bg-energen-blue hover:bg-energen-blue/90">
+            <Plus className="mr-2 h-4 w-4" /> Nuevo Cliente
+          </Button>
+        )}
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle>{clientToEdit ? "Editar Cliente" : "Agregar Nuevo Cliente"}</DialogTitle>
+          <DialogDescription>
+            {clientToEdit ? "Modifica los datos del cliente." : "Ingresa los datos del cliente para comenzar."}
+          </DialogDescription>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Razón Social / Nombre</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Ej. Empresa S.A." {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="province"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Provincia</FormLabel>
+                    <Select onValueChange={handleProvinceChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {PROVINCES.map((p) => (
+                          <SelectItem key={p} value={p}>{p}</SelectItem>
+                        ))}
+                        <SelectItem value="other">+ Nueva / Otra...</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {showCustomProvince && (
+                      <Input 
+                        placeholder="Escribir provincia..." 
+                        className="mt-2"
+                        {...form.register("custom_province")}
+                      />
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="city"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Ciudad</FormLabel>
+                    <Select 
+                      onValueChange={handleCityChange} 
+                      value={field.value}
+                      disabled={!selectedProvince && !showCustomProvince}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {currentCities.map((c) => (
+                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        ))}
+                        <SelectItem value="other">+ Nueva / Otra...</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {showCustomCity && (
+                      <Input 
+                        placeholder="Escribir ciudad..." 
+                        className="mt-2"
+                        {...form.register("custom_city")}
+                      />
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <FormField
+              control={form.control}
+              name="address"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Dirección</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Calle 123" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="phone"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Teléfono</FormLabel>
+                  <FormControl>
+                    <Input placeholder="+54 9 ..." {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <DialogFooter>
+              <Button type="submit" disabled={loading} className="w-full bg-energen-blue">
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {clientToEdit ? "Actualizar" : "Guardar Cliente"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
