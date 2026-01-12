@@ -4,10 +4,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Plus, Calendar as CalendarIcon, ArrowRight } from "lucide-react";
+import { Loader2, Plus, Calendar as CalendarIcon, ArrowRight, Edit, FileUp } from "lucide-react";
 import { format, addMonths } from "date-fns";
-import { es } from "date-fns/locale"; // IMPORTANTE: Idioma Español
+import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { Service } from "@/types";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -48,18 +49,20 @@ const formSchema = z.object({
   description: z.string().min(3, "Describe el servicio"),
   technician: z.string().min(2, "Técnico"),
   equipment_id: z.string().optional(),
-  next_service_date: z.date().optional(), // Fecha del próximo service
+  next_service_date: z.date().optional(),
 });
 
 interface CreateServiceDialogProps {
   clientId: string;
   onServiceCreated: () => void;
+  serviceToEdit?: Service; // Prop para edición
 }
 
-export function CreateServiceDialog({ clientId, onServiceCreated }: CreateServiceDialogProps) {
+export function CreateServiceDialog({ clientId, onServiceCreated, serviceToEdit }: CreateServiceDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [equipments, setEquipments] = useState<{id: string, model: string}[]>([]);
+  const [file, setFile] = useState<File | null>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -70,6 +73,28 @@ export function CreateServiceDialog({ clientId, onServiceCreated }: CreateServic
       equipment_id: "none",
     },
   });
+
+  // Cargar datos al editar
+  useEffect(() => {
+    if (open && serviceToEdit) {
+      form.reset({
+        date: new Date(serviceToEdit.date + 'T00:00:00'), // Ajuste zona horaria simple
+        technician: serviceToEdit.technician,
+        description: serviceToEdit.description,
+        equipment_id: serviceToEdit.equipment_id || "none",
+      });
+      setFile(null);
+    } else if (open && !serviceToEdit) {
+      form.reset({
+        date: new Date(),
+        technician: "",
+        description: "",
+        equipment_id: "none",
+        next_service_date: undefined
+      });
+      setFile(null);
+    }
+  }, [open, serviceToEdit, form]);
 
   const selectedEquipment = form.watch("equipment_id");
 
@@ -86,18 +111,50 @@ export function CreateServiceDialog({ clientId, onServiceCreated }: CreateServic
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setLoading(true);
     try {
-      // 1. Guardar el historial del servicio
-      const { error: serviceError } = await supabase.from("services").insert({
+      let uploadedFilePath = null;
+      
+      // Si hay archivo nuevo, subirlo
+      if (file) {
+        const fileExt = file.name.split('.').pop();
+        const filePath = `${clientId}/service_${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from('documents')
+          .upload(filePath, file);
+        
+        if (uploadError) throw uploadError;
+        uploadedFilePath = filePath;
+      }
+
+      // Preparar datos
+      const serviceData: any = {
         client_id: clientId,
         date: format(values.date, "yyyy-MM-dd"),
         description: values.description,
         technician: values.technician,
         equipment_id: values.equipment_id === "none" ? null : values.equipment_id,
-      });
+      };
 
-      if (serviceError) throw serviceError;
+      // Solo actualizar path si subí uno nuevo, sino dejar el que estaba (en edición)
+      if (uploadedFilePath) {
+        serviceData.file_path = uploadedFilePath;
+      }
 
-      // 2. Si se seleccionó un equipo y una fecha próxima, actualizar el equipo
+      if (serviceToEdit) {
+        const { error } = await supabase
+          .from("services")
+          .update(serviceData)
+          .eq("id", serviceToEdit.id);
+        if (error) throw error;
+        toast.success("Servicio actualizado");
+      } else {
+        const { error } = await supabase
+          .from("services")
+          .insert(serviceData);
+        if (error) throw error;
+        toast.success("Servicio registrado");
+      }
+
+      // Actualizar recordatorio de equipo (solo si se seleccionó fecha)
       if (values.equipment_id && values.equipment_id !== "none" && values.next_service_date) {
         const { error: eqError } = await supabase
           .from("equipment")
@@ -108,15 +165,7 @@ export function CreateServiceDialog({ clientId, onServiceCreated }: CreateServic
         else toast.info("Recordatorio actualizado para el equipo");
       }
 
-      toast.success("Servicio registrado");
       setOpen(false);
-      form.reset({
-        date: new Date(),
-        technician: "",
-        description: "",
-        equipment_id: "none",
-        next_service_date: undefined
-      });
       onServiceCreated();
     } catch (error: any) {
       toast.error("Error: " + error.message);
@@ -125,7 +174,6 @@ export function CreateServiceDialog({ clientId, onServiceCreated }: CreateServic
     }
   }
 
-  // Helper para sumar meses rápido
   const setNextDate = (months: number) => {
     const current = form.getValues("date") || new Date();
     form.setValue("next_service_date", addMonths(current, months));
@@ -134,13 +182,19 @@ export function CreateServiceDialog({ clientId, onServiceCreated }: CreateServic
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="bg-energen-blue hover:bg-energen-blue/90">
-          <Plus className="mr-2 h-4 w-4" /> Registrar Servicio
-        </Button>
+        {serviceToEdit ? (
+          <Button variant="ghost" size="icon" className="hover:bg-blue-50 text-blue-600">
+            <Edit className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Button className="bg-energen-blue hover:bg-energen-blue/90">
+            <Plus className="mr-2 h-4 w-4" /> Registrar Servicio
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Nuevo Mantenimiento</DialogTitle>
+          <DialogTitle>{serviceToEdit ? "Editar Mantenimiento" : "Nuevo Mantenimiento"}</DialogTitle>
           <DialogDescription>Registra la actividad y agenda la próxima.</DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -202,7 +256,7 @@ export function CreateServiceDialog({ clientId, onServiceCreated }: CreateServic
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Equipo (Importante para el recordatorio)</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar equipo..." />
@@ -237,6 +291,24 @@ export function CreateServiceDialog({ clientId, onServiceCreated }: CreateServic
                 </FormItem>
               )}
             />
+
+            {/* Subida de archivo (Reporte) */}
+            <div className="space-y-2">
+              <FormLabel>Reporte de Servicio (PDF/Foto) - Opcional</FormLabel>
+              <div className="flex items-center gap-2">
+                <Input 
+                  type="file" 
+                  accept=".pdf,image/*" 
+                  onChange={(e) => setFile(e.target.files?.[0] || null)}
+                  className="cursor-pointer"
+                />
+              </div>
+              {serviceToEdit && (serviceToEdit as any).file_path && !file && (
+                <p className="text-xs text-green-600 flex items-center">
+                   <FileUp className="h-3 w-3 mr-1"/> Ya tiene un archivo adjunto
+                </p>
+              )}
+            </div>
 
             {/* SECCIÓN DE RECORDATORIO */}
             {selectedEquipment && selectedEquipment !== "none" && (

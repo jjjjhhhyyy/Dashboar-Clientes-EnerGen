@@ -36,8 +36,18 @@ export function UploadDocumentDialog({ clientId, onUploadComplete }: UploadDocum
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-      setFileName(e.target.files[0].name.split('.')[0]);
+      const selectedFile = e.target.files[0];
+      setFile(selectedFile);
+      // Usar el nombre original del archivo (sin la extensión) por defecto
+      const nameWithoutExt = selectedFile.name.split('.').slice(0, -1).join('.');
+      setFileName(nameWithoutExt);
+      
+      // Intentar adivinar el tipo
+      if (selectedFile.type.startsWith('image/')) {
+        setFileType('image');
+      } else if (selectedFile.type.includes('pdf')) {
+        setFileType('report');
+      }
     }
   };
 
@@ -47,10 +57,17 @@ export function UploadDocumentDialog({ clientId, onUploadComplete }: UploadDocum
       return;
     }
 
+    if (!fileName.trim()) {
+      toast.error("El nombre es requerido");
+      return;
+    }
+
     setLoading(true);
     try {
       const fileExt = file.name.split('.').pop();
-      const filePath = `${clientId}/${Date.now()}.${fileExt}`;
+      // Sanitizar nombre de archivo para evitar problemas en storage
+      const sanitizedName = fileName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const filePath = `${clientId}/${Date.now()}_${sanitizedName}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
         .from('documents')
@@ -60,7 +77,7 @@ export function UploadDocumentDialog({ clientId, onUploadComplete }: UploadDocum
 
       const { error: dbError } = await supabase.from('documents').insert({
         client_id: clientId,
-        file_name: fileName,
+        file_name: fileName, // Guardamos el nombre "lindo" para mostrar
         file_path: filePath,
         file_type: fileType,
       });
@@ -96,22 +113,6 @@ export function UploadDocumentDialog({ clientId, onUploadComplete }: UploadDocum
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
-            <Label>Tipo de Archivo</Label>
-            <Select onValueChange={setFileType} defaultValue={fileType}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="report">Reporte de Servicio</SelectItem>
-                <SelectItem value="invoice">Factura</SelectItem>
-                <SelectItem value="budget">Presupuesto</SelectItem>
-                <SelectItem value="image">Imagen / Foto</SelectItem>
-                <SelectItem value="other">Otro</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          
-          <div className="grid gap-2">
             <Label htmlFor="file">Seleccionar Archivo</Label>
             <Input id="file" type="file" onChange={handleFileChange} />
           </div>
@@ -124,6 +125,22 @@ export function UploadDocumentDialog({ clientId, onUploadComplete }: UploadDocum
               onChange={(e) => setFileName(e.target.value)} 
               placeholder="Ej. Factura Mantenimiento Enero" 
             />
+          </div>
+
+          <div className="grid gap-2">
+            <Label>Tipo de Archivo</Label>
+            <Select onValueChange={setFileType} value={fileType}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="report">Reporte de Servicio</SelectItem>
+                <SelectItem value="invoice">Factura</SelectItem>
+                <SelectItem value="budget">Presupuesto</SelectItem>
+                <SelectItem value="image">Imagen / Foto</SelectItem>
+                <SelectItem value="other">Otro</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
         <DialogFooter>

@@ -18,7 +18,7 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { ArrowLeft, MapPin, Phone, Zap, FileText, Download, Calendar, Trash2, Edit2, Save, X } from "lucide-react";
+import { ArrowLeft, MapPin, Phone, Zap, FileText, Download, Calendar, Trash2, Edit2, File } from "lucide-react";
 import { toast } from "sonner";
 import { format, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
@@ -46,7 +46,7 @@ const ClientDetails = () => {
   const [client, setClient] = useState<Client | null>(null);
   const [equipments, setEquipments] = useState<Equipment[]>([]);
   const [services, setServices] = useState<Service[]>([]);
-  const [documents, setDocuments] = useState<Document[]>([]);
+  const [documents, setDocuments] = useState<(Document & { publicUrl?: string })[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Estados para acciones
@@ -69,9 +69,16 @@ const ClientDetails = () => {
     const { data: servData } = await supabase.from("services").select("*").eq("client_id", id).order("date", { ascending: false });
     if (servData) setServices(servData as Service[]);
 
-    // 4. Documents
+    // 4. Documents & Generate URLs for Images
     const { data: docData } = await supabase.from("documents").select("*").eq("client_id", id).order("created_at", { ascending: false });
-    if (docData) setDocuments(docData as Document[]);
+    
+    if (docData) {
+      const docsWithUrls = docData.map(doc => {
+        const { data } = supabase.storage.from("documents").getPublicUrl(doc.file_path);
+        return { ...doc, publicUrl: data.publicUrl };
+      });
+      setDocuments(docsWithUrls as (Document & { publicUrl?: string })[]);
+    }
 
     setLoading(false);
   }, [id]);
@@ -90,10 +97,14 @@ const ClientDetails = () => {
       if (deleteItem.type === 'service') table = 'services';
       if (deleteItem.type === 'document') table = 'documents';
 
-      if (deleteItem.type === 'document') {
+      if (deleteItem.type === 'document' || deleteItem.type === 'service') {
+        // Intentar borrar archivo si existe (para docs o services con pdf)
         const doc = documents.find(d => d.id === deleteItem.id);
-        if (doc) {
-          await supabase.storage.from('documents').remove([doc.file_path]);
+        const serv = services.find(s => s.id === deleteItem.id);
+        
+        const path = doc?.file_path || (serv as any)?.file_path;
+        if (path) {
+          await supabase.storage.from('documents').remove([path]);
         }
       }
 
@@ -133,13 +144,8 @@ const ClientDetails = () => {
     }
   };
 
-  // --- Lógica de descarga ---
-  const handleDownload = async (path: string) => {
-    const { data } = supabase.storage.from("documents").getPublicUrl(path);
-    if (data) {
-      // Abrir en nueva pestaña (la forma más compatible de descargar/ver)
-      window.open(data.publicUrl, '_blank');
-    }
+  const openFile = (url: string) => {
+    window.open(url, '_blank');
   };
 
   const getServiceStatus = (dateString?: string) => {
@@ -182,12 +188,12 @@ const ClientDetails = () => {
             <Input 
               value={newName} 
               onChange={(e) => setNewName(e.target.value)} 
-              placeholder="Ej. Factura Enero 2024" 
+              placeholder="Nuevo nombre..." 
             />
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRenamingDoc(null)}>Cancelar</Button>
-            <Button onClick={handleRename} className="bg-energen-blue">Guardar Cambios</Button>
+            <Button onClick={handleRename} className="bg-energen-blue">Guardar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -274,14 +280,17 @@ const ClientDetails = () => {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-                            onClick={() => setDeleteItem({ type: 'equipment', id: eq.id })}
-                          >
-                             <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            <CreateEquipmentDialog clientId={client.id} onEquipmentCreated={fetchAll} equipmentToEdit={eq} />
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                              onClick={() => setDeleteItem({ type: 'equipment', id: eq.id })}
+                            >
+                               <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     )})
@@ -330,19 +339,30 @@ const ClientDetails = () => {
                         </TableCell>
                         <TableCell className="dark:text-gray-300 max-w-md truncate" title={svc.description}>
                           {svc.description}
+                          {(svc as any).file_path && (
+                             <Button variant="link" className="h-auto p-0 ml-2 text-blue-600" onClick={() => {
+                               const { data } = supabase.storage.from("documents").getPublicUrl((svc as any).file_path);
+                               if(data) window.open(data.publicUrl, '_blank');
+                             }}>
+                               [Ver PDF]
+                             </Button>
+                          )}
                         </TableCell>
                         <TableCell className="dark:text-gray-300">
                           {svc.technician}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-                            onClick={() => setDeleteItem({ type: 'service', id: svc.id })}
-                          >
-                             <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            <CreateServiceDialog clientId={client.id} onServiceCreated={fetchAll} serviceToEdit={svc} />
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                              onClick={() => setDeleteItem({ type: 'service', id: svc.id })}
+                            >
+                               <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))
@@ -387,18 +407,27 @@ const ClientDetails = () => {
                    </Button>
                  </div>
                  
-                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                   <CardTitle className="text-sm font-medium dark:text-white truncate pr-6" title={doc.file_name}>
-                     {doc.file_name}
-                   </CardTitle>
-                   <FileText className="h-4 w-4 text-muted-foreground" />
-                 </CardHeader>
-                 <CardContent>
-                   <div className="text-xs text-muted-foreground mb-4 capitalize">{doc.file_type}</div>
-                   <Button variant="default" size="sm" className="w-full bg-energen-blue/10 text-energen-blue hover:bg-energen-blue/20 dark:bg-energen-blue/20 dark:text-blue-300" onClick={() => handleDownload(doc.file_path)}>
-                     <Download className="mr-2 h-4 w-4" /> Abrir / Descargar
-                   </Button>
-                 </CardContent>
+                 <div onClick={() => doc.publicUrl && openFile(doc.publicUrl)} className="cursor-pointer">
+                   {/* VISTA PREVIA SI ES IMAGEN */}
+                   {doc.file_type === 'image' && doc.publicUrl ? (
+                     <div className="aspect-video w-full overflow-hidden rounded-t-lg bg-gray-100 dark:bg-gray-900 border-b dark:border-gray-700">
+                        <img src={doc.publicUrl} alt={doc.file_name} className="w-full h-full object-cover transition-transform hover:scale-105" />
+                     </div>
+                   ) : (
+                     <div className="aspect-[3/1] w-full bg-gray-50 dark:bg-gray-900 rounded-t-lg border-b dark:border-gray-700 flex items-center justify-center">
+                        <FileText className="h-10 w-10 text-gray-300" />
+                     </div>
+                   )}
+
+                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3">
+                     <CardTitle className="text-sm font-medium dark:text-white truncate pr-2" title={doc.file_name}>
+                       {doc.file_name}
+                     </CardTitle>
+                   </CardHeader>
+                   <CardContent className="pb-4">
+                     <div className="text-xs text-muted-foreground capitalize">{doc.file_type === 'image' ? 'Imagen' : doc.file_type}</div>
+                   </CardContent>
+                 </div>
                </Card>
              ))}
              {documents.length === 0 && (

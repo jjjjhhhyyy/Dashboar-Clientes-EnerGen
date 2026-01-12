@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Plus, Edit } from "lucide-react";
+import { Equipment } from "@/types";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -36,16 +37,17 @@ import { Input } from "@/components/ui/input";
 const formSchema = z.object({
   type: z.string().min(1, "El tipo es requerido"),
   model: z.string().min(1, "El modelo es requerido"),
-  serial_number: z.string().optional(), // Ahora es opcional por si no lo tienen a mano
+  serial_number: z.string().optional(),
   kva: z.coerce.number().optional(),
 });
 
 interface CreateEquipmentDialogProps {
   clientId: string;
   onEquipmentCreated: () => void;
+  equipmentToEdit?: Equipment; // Prop para edición
 }
 
-export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEquipmentDialogProps) {
+export function CreateEquipmentDialog({ clientId, onEquipmentCreated, equipmentToEdit }: CreateEquipmentDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -59,6 +61,25 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEq
     },
   });
 
+  // Cargar datos al editar
+  useEffect(() => {
+    if (open && equipmentToEdit) {
+      form.reset({
+        type: equipmentToEdit.type,
+        model: equipmentToEdit.model,
+        serial_number: equipmentToEdit.serial_number || "",
+        kva: equipmentToEdit.kva || 0,
+      });
+    } else if (open && !equipmentToEdit) {
+      form.reset({
+        type: "Generador",
+        model: "",
+        serial_number: "",
+        kva: 0,
+      });
+    }
+  }, [open, equipmentToEdit, form]);
+
   const selectedType = form.watch("type");
   const isGenerator = selectedType === "Generador";
 
@@ -66,22 +87,36 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEq
     setLoading(true);
 
     try {
-      const { error } = await supabase.from("equipment").insert({
+      const dataToSave = {
         client_id: clientId,
         type: values.type,
         model: values.model,
-        serial_number: values.serial_number || "S/N", // Valor por defecto
+        serial_number: values.serial_number || "S/N",
         kva: isGenerator ? values.kva : null,
-      });
+      };
+
+      let error;
+
+      if (equipmentToEdit) {
+        const { error: updateError } = await supabase
+          .from("equipment")
+          .update(dataToSave)
+          .eq("id", equipmentToEdit.id);
+        error = updateError;
+      } else {
+        const { error: insertError } = await supabase
+          .from("equipment")
+          .insert(dataToSave);
+        error = insertError;
+      }
 
       if (error) throw error;
 
-      toast.success("Equipo registrado exitosamente");
+      toast.success(equipmentToEdit ? "Equipo actualizado" : "Equipo registrado");
       setOpen(false);
-      form.reset();
       onEquipmentCreated();
     } catch (error: any) {
-      toast.error("Error al registrar equipo: " + error.message);
+      toast.error("Error: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -90,15 +125,21 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEq
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="bg-energen-blue hover:bg-energen-blue/90">
-          <Plus className="mr-2 h-4 w-4" /> Agregar Equipo
-        </Button>
+        {equipmentToEdit ? (
+          <Button variant="ghost" size="icon" className="hover:bg-blue-50 text-blue-600">
+            <Edit className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Button className="bg-energen-blue hover:bg-energen-blue/90">
+            <Plus className="mr-2 h-4 w-4" /> Agregar Equipo
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle>Registrar Equipo</DialogTitle>
+          <DialogTitle>{equipmentToEdit ? "Editar Equipo" : "Registrar Equipo"}</DialogTitle>
           <DialogDescription>
-            Datos básicos del equipo.
+            {equipmentToEdit ? "Modificar datos del equipo." : "Datos básicos del equipo."}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -110,7 +151,7 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEq
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Tipo</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar tipo" />
