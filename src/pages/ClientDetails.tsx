@@ -133,10 +133,11 @@ const ClientDetails = () => {
     }
   };
 
-  // --- Lógica de vista previa ---
-  const handlePreview = async (path: string) => {
+  // --- Lógica de descarga ---
+  const handleDownload = async (path: string) => {
     const { data } = supabase.storage.from("documents").getPublicUrl(path);
     if (data) {
+      // Abrir en nueva pestaña (la forma más compatible de descargar/ver)
       window.open(data.publicUrl, '_blank');
     }
   };
@@ -181,12 +182,12 @@ const ClientDetails = () => {
             <Input 
               value={newName} 
               onChange={(e) => setNewName(e.target.value)} 
-              placeholder="Nuevo nombre..." 
+              placeholder="Ej. Factura Enero 2024" 
             />
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRenamingDoc(null)}>Cancelar</Button>
-            <Button onClick={handleRename} className="bg-energen-blue">Guardar</Button>
+            <Button onClick={handleRename} className="bg-energen-blue">Guardar Cambios</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -364,26 +365,29 @@ const ClientDetails = () => {
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
              {documents.map((doc) => (
                <Card key={doc.id} className="dark:bg-gray-800 dark:border-gray-700 hover:shadow-md transition-shadow relative group">
-                 <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/80 dark:bg-black/50 rounded-md p-1">
+                 {/* Acciones flotantes */}
+                 <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 dark:bg-black/80 rounded-md p-1 z-10 shadow-sm">
                    <Button 
                       variant="ghost" 
                       size="icon" 
-                      className="h-7 w-7"
-                      onClick={() => startRenaming(doc)}
+                      className="h-8 w-8 hover:bg-blue-100 dark:hover:bg-blue-900"
+                      title="Renombrar archivo"
+                      onClick={(e) => { e.stopPropagation(); startRenaming(doc); }}
                    >
-                     <Edit2 className="h-3 w-3 text-blue-600" />
+                     <Edit2 className="h-4 w-4 text-blue-600" />
                    </Button>
                    <Button 
                       variant="ghost" 
                       size="icon" 
-                      className="h-7 w-7"
-                      onClick={() => setDeleteItem({ type: 'document', id: doc.id })}
+                      className="h-8 w-8 hover:bg-red-100 dark:hover:bg-red-900"
+                      title="Eliminar archivo"
+                      onClick={(e) => { e.stopPropagation(); setDeleteItem({ type: 'document', id: doc.id }); }}
                    >
-                     <Trash2 className="h-3 w-3 text-red-600" />
+                     <Trash2 className="h-4 w-4 text-red-600" />
                    </Button>
                  </div>
                  
-                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 cursor-pointer" onClick={() => handlePreview(doc.file_path)}>
+                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                    <CardTitle className="text-sm font-medium dark:text-white truncate pr-6" title={doc.file_name}>
                      {doc.file_name}
                    </CardTitle>
@@ -391,7 +395,7 @@ const ClientDetails = () => {
                  </CardHeader>
                  <CardContent>
                    <div className="text-xs text-muted-foreground mb-4 capitalize">{doc.file_type}</div>
-                   <Button variant="outline" size="sm" className="w-full" onClick={() => handlePreview(doc.file_path)}>
+                   <Button variant="default" size="sm" className="w-full bg-energen-blue/10 text-energen-blue hover:bg-energen-blue/20 dark:bg-energen-blue/20 dark:text-blue-300" onClick={() => handleDownload(doc.file_path)}>
                      <Download className="mr-2 h-4 w-4" /> Abrir / Descargar
                    </Button>
                  </CardContent>
