@@ -47,5 +47,5 @@ export interface Document {
   file_name: string;
   file_path: string;
   file_type: 'image' | 'report' | 'invoice' | 'budget' | 'other';
-  created_at: string;
+  uploaded_at: string;
 }

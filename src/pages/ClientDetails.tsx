@@ -69,8 +69,17 @@ const ClientDetails = () => {
     if (servData) setServices(servData as Service[]);
 
     // 4. Documents & Generate URLs for Images
-    const { data: docData } = await supabase.from("documents").select("*").eq("client_id", id).order("created_at", { ascending: false });
+    // CORRECCIÓN: Usar 'uploaded_at' en lugar de 'created_at'
+    const { data: docData, error: docError } = await supabase
+      .from("documents")
+      .select("*")
+      .eq("client_id", id)
+      .order("uploaded_at", { ascending: false });
     
+    if (docError) {
+      console.error("Error fetching documents:", docError);
+    }
+
     if (docData) {
       const docsWithUrls = docData.map(doc => {
         // Aseguramos obtener la URL pública
