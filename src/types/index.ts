@@ -1,5 +1,7 @@
 export type ClientStatus = 'Activo' | 'Mantenimiento' | 'Suspendido';
 
+export type EquipmentType = 'Generador' | 'Tractor' | 'Sampi' | 'Máquina' | 'Otro';
+
 export interface Client {
   id: string;
   created_at: string;
@@ -14,11 +16,14 @@ export interface Client {
 export interface Equipment {
   id: string;
   client_id: string;
+  type: EquipmentType;
   model: string;
   serial_number: string;
-  kva: number;
+  kva?: number; // Opcional porque un tractor no tiene kVA
   engine: string;
   alternator: string;
+  year?: number;
+  created_at?: string;
 }
 
 export interface Service {
@@ -28,6 +33,11 @@ export interface Service {
   date: string;
   description: string;
   technician: string;
+  created_at?: string;
+  
+  // Para joins
+  clients?: { name: string };
+  equipment?: { model: string, type: string };
 }
 
 export interface Document {

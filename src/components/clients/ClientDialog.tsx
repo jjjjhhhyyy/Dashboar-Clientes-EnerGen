@@ -44,11 +44,11 @@ const formSchema = z.object({
   phone: z.string().min(6, "El teléfono es requerido"),
 });
 
-const PROVINCES = ["Misiones", "Corrientes", "Chaco", "Formosa", "Entre Ríos"];
-const CITIES_BY_PROVINCE: Record<string, string[]> = {
+// Ubicaciones iniciales (Base)
+const INITIAL_PROVINCES = ["Misiones", "Corrientes", "Chaco", "Formosa", "Entre Ríos"];
+const INITIAL_CITIES: Record<string, string[]> = {
   "Misiones": ["Posadas", "Oberá", "Eldorado", "Puerto Iguazú", "Apóstoles", "Leandro N. Alem"],
-  "Corrientes": ["Corrientes Capital", "Goya", "Paso de los Libres", "Curuzú Cuatiá", "Ituzaingó"],
-  "Chaco": ["Resistencia", "Sáenz Peña"],
+  "Corrientes": ["Corrientes Capital", "Goya", "Paso de los Libres", "Curuzú Cuatiá"],
 };
 
 interface ClientDialogProps {
@@ -61,6 +61,10 @@ export function ClientDialog({ clientToEdit, onClientSaved }: ClientDialogProps)
   const [loading, setLoading] = useState(false);
   const [showCustomProvince, setShowCustomProvince] = useState(false);
   const [showCustomCity, setShowCustomCity] = useState(false);
+  
+  // Estado para las listas dinámicas
+  const [provincesList, setProvincesList] = useState<string[]>(INITIAL_PROVINCES);
+  const [citiesMap, setCitiesMap] = useState<Record<string, string[]>>(INITIAL_CITIES);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -75,11 +79,43 @@ export function ClientDialog({ clientToEdit, onClientSaved }: ClientDialogProps)
     },
   });
 
+  // Cargar ubicaciones guardadas en la base de datos para "recordarlas"
+  useEffect(() => {
+    const fetchLocations = async () => {
+      const { data } = await supabase.from('clients').select('province, city');
+      
+      if (data) {
+        const newProvinces = new Set(INITIAL_PROVINCES);
+        const newCitiesMap = { ...INITIAL_CITIES };
+
+        data.forEach(item => {
+          if (item.province) newProvinces.add(item.province);
+          
+          if (item.province && item.city) {
+            if (!newCitiesMap[item.province]) {
+              newCitiesMap[item.province] = [];
+            }
+            if (!newCitiesMap[item.province].includes(item.city)) {
+              newCitiesMap[item.province].push(item.city);
+            }
+          }
+        });
+
+        setProvincesList(Array.from(newProvinces).sort());
+        setCitiesMap(newCitiesMap);
+      }
+    };
+
+    if (open) {
+      fetchLocations();
+    }
+  }, [open]);
+
   // Cargar datos si es edición
   useEffect(() => {
     if (clientToEdit && open) {
-      const isCustomProv = !PROVINCES.includes(clientToEdit.province);
-      const isCustomCity = !CITIES_BY_PROVINCE[clientToEdit.province]?.includes(clientToEdit.city);
+      const isCustomProv = !provincesList.includes(clientToEdit.province);
+      const isCustomCity = !citiesMap[clientToEdit.province]?.includes(clientToEdit.city);
 
       form.reset({
         name: clientToEdit.name,
@@ -99,7 +135,7 @@ export function ClientDialog({ clientToEdit, onClientSaved }: ClientDialogProps)
       setShowCustomProvince(false);
       setShowCustomCity(false);
     }
-  }, [clientToEdit, open, form]);
+  }, [clientToEdit, open, form, provincesList, citiesMap]);
 
   const selectedProvince = form.watch("province");
 
@@ -111,8 +147,8 @@ export function ClientDialog({ clientToEdit, onClientSaved }: ClientDialogProps)
       form.setValue("city", "other");
     } else {
       setShowCustomProvince(false);
-      const cities = CITIES_BY_PROVINCE[value];
-      if (!cities) {
+      const cities = citiesMap[value];
+      if (!cities || cities.length === 0) {
          setShowCustomCity(true);
          form.setValue("city", "other");
       } else {
@@ -179,7 +215,7 @@ export function ClientDialog({ clientToEdit, onClientSaved }: ClientDialogProps)
     }
   }
 
-  const currentCities = CITIES_BY_PROVINCE[selectedProvince] || [];
+  const currentCities = citiesMap[selectedProvince] || [];
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -231,7 +267,7 @@ export function ClientDialog({ clientToEdit, onClientSaved }: ClientDialogProps)
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {PROVINCES.map((p) => (
+                        {provincesList.map((p) => (
                           <SelectItem key={p} value={p}>{p}</SelectItem>
                         ))}
                         <SelectItem value="other">+ Nueva / Otra...</SelectItem>

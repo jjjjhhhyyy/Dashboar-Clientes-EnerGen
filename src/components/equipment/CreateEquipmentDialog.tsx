@@ -24,12 +24,20 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 
 const formSchema = z.object({
+  type: z.string().min(1, "El tipo es requerido"),
   model: z.string().min(1, "El modelo es requerido"),
   serial_number: z.string().min(1, "El número de serie es requerido"),
-  kva: z.coerce.number().min(1, "La potencia en kVA es requerida"),
+  kva: z.coerce.number().optional(),
   engine: z.string().optional(),
   alternator: z.string().optional(),
   year: z.coerce.number().min(1900, "Año inválido").max(new Date().getFullYear() + 1, "Año inválido").optional(),
@@ -47,6 +55,7 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEq
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      type: "Generador",
       model: "",
       serial_number: "",
       kva: 0,
@@ -56,15 +65,19 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEq
     },
   });
 
+  const selectedType = form.watch("type");
+  const isGenerator = selectedType === "Generador";
+
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setLoading(true);
 
     try {
       const { error } = await supabase.from("equipment").insert({
         client_id: clientId,
+        type: values.type,
         model: values.model,
         serial_number: values.serial_number,
-        kva: values.kva,
+        kva: isGenerator ? values.kva : null, // Solo guardar kVA si es generador
         engine: values.engine || null,
         alternator: values.alternator || null,
         year: values.year || null,
@@ -92,13 +105,38 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEq
       </DialogTrigger>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Registrar Grupo Electrógeno</DialogTitle>
+          <DialogTitle>Registrar Máquina o Equipo</DialogTitle>
           <DialogDescription>
-            Ingresa los detalles técnicos del generador.
+            Ingresa los detalles técnicos de la unidad.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            
+            <FormField
+              control={form.control}
+              name="type"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tipo de Equipo</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar tipo" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="Generador">Generador / Grupo Electrógeno</SelectItem>
+                      <SelectItem value="Tractor">Tractor</SelectItem>
+                      <SelectItem value="Sampi">Sampi / Autoelevador</SelectItem>
+                      <SelectItem value="Máquina">Máquina Vial / Otra</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -107,25 +145,28 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEq
                   <FormItem>
                     <FormLabel>Modelo</FormLabel>
                     <FormControl>
-                      <Input placeholder="Ej. C110 D5" {...field} />
+                      <Input placeholder="Ej. John Deere / Cummins" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="kva"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Potencia (kVA)</FormLabel>
-                    <FormControl>
-                      <Input type="number" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              
+              {isGenerator && (
+                <FormField
+                  control={form.control}
+                  name="kva"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Potencia (kVA)</FormLabel>
+                      <FormControl>
+                        <Input type="number" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
             </div>
 
             <FormField
@@ -133,7 +174,7 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEq
               name="serial_number"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Número de Serie</FormLabel>
+                  <FormLabel>Número de Serie / Chasis</FormLabel>
                   <FormControl>
                     <Input placeholder="Ej. L21L123456" {...field} />
                   </FormControl>
@@ -156,19 +197,21 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated }: CreateEq
                   </FormItem>
                 )}
               />
-               <FormField
-                control={form.control}
-                name="alternator"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Alternador</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Marca/Modelo" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+               {isGenerator && (
+                 <FormField
+                  control={form.control}
+                  name="alternator"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Alternador</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Marca/Modelo" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+               )}
             </div>
              <FormField
                 control={form.control}

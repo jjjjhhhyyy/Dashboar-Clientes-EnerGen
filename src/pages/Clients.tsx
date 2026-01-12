@@ -38,10 +38,6 @@ const Clients = () => {
     setLoading(false);
   };
 
-  useEffect(() => {
-    fetchClients();
-  }, []);
-
   const handleExportCSV = () => {
     if (clients.length === 0) return;
     
@@ -136,7 +132,7 @@ const Clients = () => {
             <Upload className="mr-2 h-4 w-4" /> Importar
           </Button>
           <Button variant="outline" onClick={handleExportCSV}>
-            <FileDown className="mr-2 h-4 w-4" /> Exportar
+            <FileDown className="mr-2 h-4 w-4" /> Exportar a Excel (CSV)
           </Button>
           <ClientDialog onClientSaved={fetchClients} />
         </div>
