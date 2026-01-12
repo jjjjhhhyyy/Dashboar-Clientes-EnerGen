@@ -38,13 +38,13 @@ const formSchema = z.object({
   type: z.string().min(1, "El tipo es requerido"),
   model: z.string().min(1, "El modelo es requerido"),
   serial_number: z.string().optional(),
-  kva: z.coerce.number().optional(),
+  kva: z.string().optional(), // Cambiado a string para manejar vacíos mejor
 });
 
 interface CreateEquipmentDialogProps {
   clientId: string;
   onEquipmentCreated: () => void;
-  equipmentToEdit?: Equipment; // Prop para edición
+  equipmentToEdit?: Equipment;
 }
 
 export function CreateEquipmentDialog({ clientId, onEquipmentCreated, equipmentToEdit }: CreateEquipmentDialogProps) {
@@ -57,7 +57,7 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated, equipmentT
       type: "Generador",
       model: "",
       serial_number: "",
-      kva: 0,
+      kva: "",
     },
   });
 
@@ -68,14 +68,14 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated, equipmentT
         type: equipmentToEdit.type,
         model: equipmentToEdit.model,
         serial_number: equipmentToEdit.serial_number || "",
-        kva: equipmentToEdit.kva || 0,
+        kva: equipmentToEdit.kva ? String(equipmentToEdit.kva) : "",
       });
     } else if (open && !equipmentToEdit) {
       form.reset({
         type: "Generador",
         model: "",
         serial_number: "",
-        kva: 0,
+        kva: "",
       });
     }
   }, [open, equipmentToEdit, form]);
@@ -87,12 +87,17 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated, equipmentT
     setLoading(true);
 
     try {
+      // Convertir KVA a número o null
+      const kvaValue = values.kva && !isNaN(Number(values.kva)) ? Number(values.kva) : null;
+      // Convertir Serial Number vacío a null
+      const serialValue = values.serial_number && values.serial_number.trim() !== "" ? values.serial_number : null;
+
       const dataToSave = {
         client_id: clientId,
         type: values.type,
         model: values.model,
-        serial_number: values.serial_number || "S/N",
-        kva: isGenerator ? values.kva : null,
+        serial_number: serialValue,
+        kva: isGenerator ? kvaValue : null,
       };
 
       let error;
@@ -116,7 +121,8 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated, equipmentT
       setOpen(false);
       onEquipmentCreated();
     } catch (error: any) {
-      toast.error("Error: " + error.message);
+      console.error("Error saving equipment:", error);
+      toast.error("Error al guardar: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -192,7 +198,7 @@ export function CreateEquipmentDialog({ clientId, onEquipmentCreated, equipmentT
                   <FormItem>
                     <FormLabel>Potencia (kVA)</FormLabel>
                     <FormControl>
-                      <Input type="number" {...field} />
+                      <Input type="number" placeholder="0" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
