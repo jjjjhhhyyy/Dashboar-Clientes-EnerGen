@@ -18,10 +18,9 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { ArrowLeft, MapPin, Phone, Zap, FileText, Download, Calendar, Trash2, Edit2, File } from "lucide-react";
+import { ArrowLeft, MapPin, Phone, Zap, FileText, Download, Calendar, Trash2, Edit2, RotateCw } from "lucide-react";
 import { toast } from "sonner";
 import { format, differenceInDays } from "date-fns";
-import { es } from "date-fns/locale";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -74,10 +73,13 @@ const ClientDetails = () => {
     
     if (docData) {
       const docsWithUrls = docData.map(doc => {
+        // Aseguramos obtener la URL pública
         const { data } = supabase.storage.from("documents").getPublicUrl(doc.file_path);
         return { ...doc, publicUrl: data.publicUrl };
       });
       setDocuments(docsWithUrls as (Document & { publicUrl?: string })[]);
+    } else {
+      setDocuments([]);
     }
 
     setLoading(false);
@@ -98,7 +100,6 @@ const ClientDetails = () => {
       if (deleteItem.type === 'document') table = 'documents';
 
       if (deleteItem.type === 'document' || deleteItem.type === 'service') {
-        // Intentar borrar archivo si existe (para docs o services con pdf)
         const doc = documents.find(d => d.id === deleteItem.id);
         const serv = services.find(s => s.id === deleteItem.id);
         
@@ -188,12 +189,12 @@ const ClientDetails = () => {
             <Input 
               value={newName} 
               onChange={(e) => setNewName(e.target.value)} 
-              placeholder="Nuevo nombre..." 
+              placeholder="Ej. Factura Enero 2024" 
             />
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRenamingDoc(null)}>Cancelar</Button>
-            <Button onClick={handleRename} className="bg-energen-blue">Guardar</Button>
+            <Button onClick={handleRename} className="bg-energen-blue">Guardar Cambios</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -213,6 +214,9 @@ const ClientDetails = () => {
           </div>
         </div>
         <div className="flex gap-2">
+           <Button variant="outline" size="icon" onClick={fetchAll} title="Recargar datos">
+             <RotateCw className="h-4 w-4" />
+           </Button>
            <ClientDialog clientToEdit={client} onClientSaved={fetchAll} />
         </div>
       </div>
@@ -426,6 +430,12 @@ const ClientDetails = () => {
                    </CardHeader>
                    <CardContent className="pb-4">
                      <div className="text-xs text-muted-foreground capitalize">{doc.file_type === 'image' ? 'Imagen' : doc.file_type}</div>
+                     <Button variant="default" size="sm" className="w-full mt-2 bg-energen-blue/10 text-energen-blue hover:bg-energen-blue/20 dark:bg-energen-blue/20 dark:text-blue-300" onClick={(e) => {
+                       e.stopPropagation();
+                       if(doc.publicUrl) openFile(doc.publicUrl);
+                     }}>
+                       <Download className="mr-2 h-4 w-4" /> Abrir / Descargar
+                     </Button>
                    </CardContent>
                  </div>
                </Card>
