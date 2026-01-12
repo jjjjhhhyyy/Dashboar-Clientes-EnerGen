@@ -14,19 +14,23 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { Search, MapPin, Phone, ArrowRight, FileDown, Upload } from "lucide-react";
+import { Search, MapPin, Phone, ArrowRight, FileDown, Upload, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 const Clients = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   const fetchClients = async () => {
-    setLoading(true);
+    // No ponemos setLoading(true) aquí para evitar parpadeos si ya hay datos, 
+    // solo en la carga inicial.
+    if (clients.length === 0) setLoading(true);
+    
     const { data, error } = await supabase
       .from("clients")
       .select("*")
@@ -38,14 +42,22 @@ const Clients = () => {
     setLoading(false);
   };
 
+  useEffect(() => {
+    fetchClients();
+  }, []);
+
   const handleExportCSV = () => {
-    if (clients.length === 0) return;
+    if (clients.length === 0) {
+      toast.error("No hay clientes para exportar");
+      return;
+    }
     
     const headers = ["ID", "Nombre", "Provincia", "Ciudad", "Dirección", "Teléfono", "Estado"];
     const csvContent = [
       headers.join(","),
       ...clients.map(c => 
-        `${c.id},"${c.name}","${c.province}","${c.city}","${c.address}","${c.phone}",${c.status}`
+        // Envolvemos en comillas para proteger comas internas
+        `"${c.id}","${c.name}","${c.province}","${c.city}","${c.address}","${c.phone}","${c.status}"`
       )
     ].join("\n");
 
@@ -59,40 +71,108 @@ const Clients = () => {
     document.body.removeChild(link);
   };
 
+  // Función inteligente para leer CSV respetando comillas
+  const parseCSVLine = (text: string) => {
+    const result = [];
+    let cell = '';
+    let quote = false;
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      if (char === '"') {
+        quote = !quote;
+      } else if (char === ',' && !quote) {
+        result.push(cell);
+        cell = '';
+      } else {
+        cell += char;
+      }
+    }
+    result.push(cell);
+    return result.map(c => c.replace(/^"|"$/g, '').replace(/""/g, '"').trim());
+  };
+
   const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setImporting(true);
     const reader = new FileReader();
+    
     reader.onload = async (event) => {
-      const text = event.target?.result as string;
-      const rows = text.split('\n').slice(1); // Skip header
-      
-      let importedCount = 0;
-      for (const row of rows) {
-        if (!row.trim()) continue;
-        const cols = row.split(','); // Simple split, not robust for quoted commas but sufficient for basic req
-        // Expected format: Name, Province, City, Address, Phone
-        if (cols.length >= 3) {
-           const name = cols[0]?.replace(/"/g, "").trim();
-           const province = cols[1]?.replace(/"/g, "").trim();
-           const city = cols[2]?.replace(/"/g, "").trim();
-           // Default others
-           if (name) {
-             await supabase.from("clients").insert({
+      try {
+        const text = event.target?.result as string;
+        const rows = text.split(/\r?\n/); // Maneja saltos de línea de Windows/Mac/Linux
+        
+        let importedCount = 0;
+        let errors = 0;
+
+        // Saltamos la cabecera (índice 0)
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i];
+          if (!row.trim()) continue;
+          
+          const cols = parseCSVLine(row);
+          
+          // Esperamos: ID(ignorar), Nombre, Provincia, Ciudad, Dirección, Teléfono, Estado
+          // O formato simple: Nombre, Provincia, Ciudad...
+          
+          // Intentamos detectar el formato. Si tiene ID (uuid largo), probablemente es exportado del sistema.
+          // Si no, es un excel manual. Asumiremos el orden estándar de exportación para re-importar.
+          // Indice CSV Exportado: 0:ID, 1:Nombre, 2:Provincia, 3:Ciudad, 4:Dirección, 5:Teléfono, 6:Estado
+          
+          let name, province, city, address, phone;
+
+          if (cols.length >= 6) {
+             // Formato Completo
+             name = cols[1];
+             province = cols[2];
+             city = cols[3];
+             address = cols[4];
+             phone = cols[5];
+          } else if (cols.length >= 3) {
+             // Formato Simple (Nombre, Provincia, Ciudad...)
+             name = cols[0];
+             province = cols[1];
+             city = cols[2];
+             address = cols[3] || "-";
+             phone = cols[4] || "-";
+          }
+
+          if (name) {
+             const { error } = await supabase.from("clients").insert({
                 name,
                 province: province || "Desconocida",
                 city: city || "Desconocida",
-                address: "-",
-                phone: "-",
+                address: address || "-",
+                phone: phone || "-",
                 status: "Activo"
              });
-             importedCount++;
-           }
+             
+             if (!error) importedCount++;
+             else {
+               console.error("Error importando fila:", row, error);
+               errors++;
+             }
+          }
         }
+        
+        if (importedCount > 0) {
+          toast.success(`${importedCount} clientes importados correctamente.`);
+          fetchClients();
+        } else {
+          toast.warning("No se pudieron importar clientes. Verifica el formato del archivo.");
+        }
+        
+        if (errors > 0) {
+          toast.error(`Hubo errores en ${errors} filas.`);
+        }
+
+      } catch (err) {
+        toast.error("Error al procesar el archivo.");
+        console.error(err);
+      } finally {
+        setImporting(false);
       }
-      toast.success(`${importedCount} clientes importados. Refresca para ver detalles.`);
-      fetchClients();
     };
     reader.readAsText(file);
     e.target.value = ""; // Reset input
@@ -106,10 +186,10 @@ const Clients = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "Activo": return "bg-green-100 text-green-800 hover:bg-green-200";
-      case "Mantenimiento": return "bg-amber-100 text-amber-800 hover:bg-amber-200";
-      case "Suspendido": return "bg-red-100 text-red-800 hover:bg-red-200";
-      default: return "bg-gray-100 text-gray-800";
+      case "Activo": return "bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300";
+      case "Mantenimiento": return "bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-300";
+      case "Suspendido": return "bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-300";
+      default: return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300";
     }
   };
 
@@ -120,7 +200,7 @@ const Clients = () => {
           <h2 className="text-3xl font-bold tracking-tight text-energen-slate dark:text-white">Clientes</h2>
           <p className="text-gray-500 dark:text-gray-400">Gestión de cartera y equipos instalados.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <input 
             type="file" 
             ref={fileInputRef} 
@@ -128,11 +208,12 @@ const Clients = () => {
             accept=".csv" 
             onChange={handleImportCSV} 
           />
-          <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
-            <Upload className="mr-2 h-4 w-4" /> Importar
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+            {importing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+            {importing ? "Importando..." : "Importar CSV"}
           </Button>
           <Button variant="outline" onClick={handleExportCSV}>
-            <FileDown className="mr-2 h-4 w-4" /> Exportar a Excel (CSV)
+            <FileDown className="mr-2 h-4 w-4" /> Exportar
           </Button>
           <ClientDialog onClientSaved={fetchClients} />
         </div>
@@ -166,7 +247,10 @@ const Clients = () => {
                 {loading ? (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center py-10 dark:text-gray-400">
-                      Cargando clientes...
+                      <div className="flex justify-center items-center gap-2">
+                        <Loader2 className="h-6 w-6 animate-spin text-energen-blue" />
+                        <span>Cargando cartera de clientes...</span>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : filteredClients.length === 0 ? (
