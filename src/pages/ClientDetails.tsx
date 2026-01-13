@@ -53,61 +53,68 @@ const ClientDetails = () => {
   const [renamingDoc, setRenamingDoc] = useState<Document | null>(null);
   const [newName, setNewName] = useState("");
 
-  const fetchAll = useCallback(async () => {
+  const fetchAll = useCallback(async (showLoading = false) => {
     if (!id) return;
     
-    // 1. Client
-    const { data: clientData } = await supabase.from("clients").select("*").eq("id", id).single();
-    if (clientData) setClient(clientData as Client);
-
-    // 2. Equipments
-    const { data: eqData } = await supabase.from("equipment").select("*").eq("client_id", id).order("created_at", { ascending: false });
-    if (eqData) setEquipments(eqData as Equipment[]);
-
-    // 3. Services
-    const { data: servData } = await supabase.from("services").select("*").eq("client_id", id).order("date", { ascending: false });
-    if (servData) setServices(servData as Service[]);
-
-    // 4. Documents
-    const { data: docData, error: docError } = await supabase
-      .from("documents")
-      .select("*")
-      .eq("client_id", id)
-      .order("uploaded_at", { ascending: false });
+    if (showLoading) setLoading(true);
     
-    if (docError) {
-      console.error("Error fetching documents:", docError);
-    }
+    try {
+      // 1. Client
+      const { data: clientData } = await supabase.from("clients").select("*").eq("id", id).single();
+      if (clientData) setClient(clientData as Client);
 
-    if (docData) {
-      // Usamos URLs públicas para mayor fiabilidad con PDFs y visualización
-      const docsWithUrls = docData.map((doc) => {
-        const { data } = supabase.storage.from("documents").getPublicUrl(doc.file_path);
-        return { ...doc, publicUrl: data.publicUrl };
-      });
-      setDocuments(docsWithUrls);
-    } else {
-      setDocuments([]);
-    }
+      // 2. Equipments
+      const { data: eqData } = await supabase.from("equipment").select("*").eq("client_id", id).order("created_at", { ascending: false });
+      if (eqData) setEquipments(eqData as Equipment[]);
 
-    setLoading(false);
+      // 3. Services
+      const { data: servData } = await supabase.from("services").select("*").eq("client_id", id).order("date", { ascending: false });
+      if (servData) setServices(servData as Service[]);
+
+      // 4. Documents
+      const { data: docData } = await supabase
+        .from("documents")
+        .select("*")
+        .eq("client_id", id)
+        .order("uploaded_at", { ascending: false });
+
+      if (docData) {
+        // Pre-calculamos las URLs públicas para evitar hacerlo en cada render
+        const docsWithUrls = docData.map((doc) => {
+          const { data } = supabase.storage.from("documents").getPublicUrl(doc.file_path);
+          return { ...doc, publicUrl: data.publicUrl };
+        });
+        setDocuments(docsWithUrls);
+      } else {
+        setDocuments([]);
+      }
+    } catch (error) {
+      console.error("Error fetching client details:", error);
+      toast.error("Error al cargar datos");
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
 
   useEffect(() => {
-    fetchAll();
+    fetchAll(true); // Carga inicial con spinner
   }, [fetchAll]);
 
-  // --- Helper para abrir archivos ---
-  const openFile = (filePath: string) => {
-    const { data } = supabase.storage.from("documents").getPublicUrl(filePath);
-    if (data?.publicUrl) {
-      window.open(data.publicUrl, '_blank');
-    } else {
-      toast.error("No se pudo obtener el enlace del archivo");
+  // Función inteligente para abrir archivos (acepta path relativo o URL completa)
+  const openFile = (pathOrUrl: string) => {
+    if (!pathOrUrl) return;
+
+    let urlToOpen = pathOrUrl;
+
+    // Si NO empieza con http, asumimos que es un path relativo de Supabase Storage
+    if (!pathOrUrl.startsWith('http')) {
+       const { data } = supabase.storage.from("documents").getPublicUrl(pathOrUrl);
+       urlToOpen = data.publicUrl;
     }
+
+    window.open(urlToOpen, '_blank');
   };
 
-  // --- Lógica de borrado ---
   const confirmDelete = async () => {
     if (!deleteItem) return;
 
@@ -123,6 +130,7 @@ const ClientDetails = () => {
         
         const path = doc?.file_path || (serv as any)?.file_path;
         if (path) {
+          // Intentamos borrar el archivo, pero no bloqueamos si falla (puede que ya no exista)
           await supabase.storage.from('documents').remove([path]);
         }
       }
@@ -131,7 +139,8 @@ const ClientDetails = () => {
       if (error) throw error;
 
       toast.success("Elemento eliminado");
-      fetchAll();
+      // Recargamos sin spinner para evitar "congelamiento" visual
+      fetchAll(false); 
     } catch (error: any) {
       toast.error("Error al eliminar: " + error.message);
     } finally {
@@ -139,7 +148,6 @@ const ClientDetails = () => {
     }
   };
 
-  // --- Lógica de renombrado ---
   const startRenaming = (doc: Document) => {
     setRenamingDoc(doc);
     setNewName(doc.file_name);
@@ -157,7 +165,7 @@ const ClientDetails = () => {
       if (error) throw error;
       toast.success("Nombre actualizado");
       setRenamingDoc(null);
-      fetchAll();
+      fetchAll(false);
     } catch (error: any) {
       toast.error("Error al renombrar: " + error.message);
     }
@@ -174,11 +182,19 @@ const ClientDetails = () => {
     return { color: "text-green-600 bg-green-50", text: format(date, "dd/MM/yyyy") };
   };
 
-  if (loading) return <div className="p-8 text-center dark:text-white">Cargando información...</div>;
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="flex flex-col items-center gap-2">
+        <RotateCw className="h-8 w-8 animate-spin text-energen-blue" />
+        <p className="text-gray-500">Cargando información...</p>
+      </div>
+    </div>
+  );
+
   if (!client) return <div className="p-8 text-center dark:text-white">Cliente no encontrado</div>;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Dialogo Eliminar */}
       <AlertDialog open={!!deleteItem} onOpenChange={(open) => !open && setDeleteItem(null)}>
         <AlertDialogContent>
@@ -228,10 +244,10 @@ const ClientDetails = () => {
           </div>
         </div>
         <div className="flex gap-2">
-           <Button variant="outline" size="icon" onClick={fetchAll} title="Recargar datos">
+           <Button variant="outline" size="icon" onClick={() => fetchAll(true)} title="Recargar datos">
              <RotateCw className="h-4 w-4" />
            </Button>
-           <ClientDialog clientToEdit={client} onClientSaved={fetchAll} />
+           <ClientDialog clientToEdit={client} onClientSaved={() => fetchAll(false)} />
         </div>
       </div>
 
@@ -248,7 +264,7 @@ const ClientDetails = () => {
              <div>
                <h3 className="text-lg font-medium dark:text-white">Flota de Equipos</h3>
              </div>
-             <CreateEquipmentDialog clientId={client.id} onEquipmentCreated={fetchAll} />
+             <CreateEquipmentDialog clientId={client.id} onEquipmentCreated={() => fetchAll(false)} />
           </div>
 
           <Card className="dark:bg-gray-800 dark:border-gray-700">
@@ -299,7 +315,7 @@ const ClientDetails = () => {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
-                            <CreateEquipmentDialog clientId={client.id} onEquipmentCreated={fetchAll} equipmentToEdit={eq} />
+                            <CreateEquipmentDialog clientId={client.id} onEquipmentCreated={() => fetchAll(false)} equipmentToEdit={eq} />
                             <Button 
                               variant="ghost" 
                               size="icon" 
@@ -325,7 +341,7 @@ const ClientDetails = () => {
              <div>
                <h3 className="text-lg font-medium dark:text-white">Historial</h3>
              </div>
-             <CreateServiceDialog clientId={client.id} onServiceCreated={fetchAll} />
+             <CreateServiceDialog clientId={client.id} onServiceCreated={() => fetchAll(false)} />
           </div>
 
           <Card className="dark:bg-gray-800 dark:border-gray-700">
@@ -368,7 +384,7 @@ const ClientDetails = () => {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
-                            <CreateServiceDialog clientId={client.id} onServiceCreated={fetchAll} serviceToEdit={svc} />
+                            <CreateServiceDialog clientId={client.id} onServiceCreated={() => fetchAll(false)} serviceToEdit={svc} />
                             <Button 
                               variant="ghost" 
                               size="icon" 
@@ -394,7 +410,7 @@ const ClientDetails = () => {
              <div>
                <h3 className="text-lg font-medium dark:text-white">Documentación</h3>
              </div>
-             <UploadDocumentDialog clientId={client.id} onUploadComplete={fetchAll} />
+             <UploadDocumentDialog clientId={client.id} onUploadComplete={() => fetchAll(false)} />
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -422,7 +438,7 @@ const ClientDetails = () => {
                    </Button>
                  </div>
                  
-                 <div onClick={() => openFile(doc.file_path)} className="cursor-pointer">
+                 <div onClick={() => doc.publicUrl && openFile(doc.publicUrl)} className="cursor-pointer">
                    {/* VISTA PREVIA SI ES IMAGEN */}
                    {doc.file_type === 'image' && doc.publicUrl ? (
                      <div className="aspect-video w-full overflow-hidden rounded-t-lg bg-gray-100 dark:bg-gray-900 border-b dark:border-gray-700">
@@ -443,7 +459,7 @@ const ClientDetails = () => {
                      <div className="text-xs text-muted-foreground capitalize">{doc.file_type === 'image' ? 'Imagen' : doc.file_type}</div>
                      <Button variant="default" size="sm" className="w-full mt-2 bg-energen-blue/10 text-energen-blue hover:bg-energen-blue/20 dark:bg-energen-blue/20 dark:text-blue-300" onClick={(e) => {
                        e.stopPropagation();
-                       openFile(doc.file_path);
+                       openFile(doc.publicUrl || doc.file_path);
                      }}>
                        <Download className="mr-2 h-4 w-4" /> Abrir / Descargar
                      </Button>
