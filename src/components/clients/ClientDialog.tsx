@@ -52,8 +52,8 @@ const formSchema = z.object({
   custom_province: z.string().optional(),
   city: z.string().min(1, "Selecciona una ciudad"),
   custom_city: z.string().optional(),
-  address: z.string().min(5, "La dirección es requerida"),
-  phone: z.string().min(6, "El teléfono es requerido"),
+  address: z.string().optional(),
+  phone: z.string().optional(),
 });
 
 // Ubicaciones iniciales VACÍAS para que se armen solo con lo que hay en BD
@@ -130,8 +130,8 @@ export function ClientDialog({ clientToEdit, onClientSaved }: ClientDialogProps)
 
       form.reset({
         name: clientToEdit.name,
-        address: clientToEdit.address,
-        phone: clientToEdit.phone,
+        address: clientToEdit.address || "", // Fallback to empty string
+        phone: clientToEdit.phone || "",     // Fallback to empty string
         province: isCustomProv ? "other" : clientToEdit.province,
         custom_province: isCustomProv ? clientToEdit.province : "",
         city: isCustomCity ? "other" : clientToEdit.city,
@@ -195,8 +195,8 @@ export function ClientDialog({ clientToEdit, onClientSaved }: ClientDialogProps)
         name: values.name,
         province: finalProvince,
         city: finalCity,
-        address: values.address,
-        phone: values.phone,
+        address: values.address || null,
+        phone: values.phone || null,
         status: clientToEdit ? clientToEdit.status : "Activo",
       };
 
@@ -359,7 +359,7 @@ export function ClientDialog({ clientToEdit, onClientSaved }: ClientDialogProps)
               name="address"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Dirección</FormLabel>
+                  <FormLabel>Dirección (Opcional)</FormLabel>
                   <FormControl>
                     <Input placeholder="Calle 123" {...field} />
                   </FormControl>
@@ -373,7 +373,7 @@ export function ClientDialog({ clientToEdit, onClientSaved }: ClientDialogProps)
               name="phone"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Teléfono</FormLabel>
+                  <FormLabel>Teléfono (Opcional)</FormLabel>
                   <FormControl>
                     <Input placeholder="+54 9 ..." {...field} />
                   </FormControl>
