@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Plus, Edit, Trash2, AlertTriangle } from "lucide-react";
+import { Loader2, Plus, Edit, Trash2 } from "lucide-react";
 import { Client } from "@/types";
 
 import { Button } from "@/components/ui/button";
@@ -56,12 +56,9 @@ const formSchema = z.object({
   phone: z.string().min(6, "El teléfono es requerido"),
 });
 
-// Ubicaciones iniciales (Base)
-const INITIAL_PROVINCES = ["Misiones", "Corrientes", "Chaco", "Formosa", "Entre Ríos"];
-const INITIAL_CITIES: Record<string, string[]> = {
-  "Misiones": ["Posadas", "Oberá", "Eldorado", "Puerto Iguazú", "Apóstoles", "Leandro N. Alem"],
-  "Corrientes": ["Corrientes Capital", "Goya", "Paso de los Libres", "Curuzú Cuatiá"],
-};
+// Ubicaciones iniciales VACÍAS para que se armen solo con lo que hay en BD
+const INITIAL_PROVINCES: string[] = [];
+const INITIAL_CITIES: Record<string, string[]> = {};
 
 interface ClientDialogProps {
   clientToEdit?: Client;

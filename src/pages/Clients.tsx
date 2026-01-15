@@ -98,14 +98,19 @@ const Clients = () => {
       <Card className="dark:bg-gray-800 dark:border-gray-700">
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row gap-2 justify-between">
-            <div className="relative w-full max-w-sm">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
-              <Input
-                placeholder="Buscar por ciudad, nombre..."
-                className="pl-9 border-energen-blue/20 focus-visible:ring-energen-blue dark:bg-gray-900 dark:text-white"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+            <div className="w-full max-w-sm space-y-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+                <Input
+                  placeholder="Buscar por ciudad, nombre..."
+                  className="pl-9 border-energen-blue/20 focus-visible:ring-energen-blue dark:bg-gray-900 dark:text-white"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 pl-1">
+                {filteredClients.length} {filteredClients.length === 1 ? 'resultado' : 'resultados'}
+              </div>
             </div>
             {/* Mobile Export Button */}
             <Button variant="outline" onClick={handleExportCSV} className="md:hidden w-full sm:w-auto">
