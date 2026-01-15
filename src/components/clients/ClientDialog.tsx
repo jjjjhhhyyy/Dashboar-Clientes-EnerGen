@@ -300,10 +300,10 @@ export function ClientDialog({ clientToEdit, onClientSaved }: ClientDialogProps)
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
+                        <SelectItem value="other" className="font-semibold text-energen-blue">+ Nueva / Otra...</SelectItem>
                         {provincesList.map((p) => (
                           <SelectItem key={p} value={p}>{p}</SelectItem>
                         ))}
-                        <SelectItem value="other">+ Nueva / Otra...</SelectItem>
                       </SelectContent>
                     </Select>
                     {showCustomProvince && (
@@ -335,10 +335,10 @@ export function ClientDialog({ clientToEdit, onClientSaved }: ClientDialogProps)
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
+                        <SelectItem value="other" className="font-semibold text-energen-blue">+ Nueva / Otra...</SelectItem>
                         {currentCities.map((c) => (
                           <SelectItem key={c} value={c}>{c}</SelectItem>
                         ))}
-                        <SelectItem value="other">+ Nueva / Otra...</SelectItem>
                       </SelectContent>
                     </Select>
                     {showCustomCity && (
